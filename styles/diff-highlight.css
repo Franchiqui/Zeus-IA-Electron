@@ -1,0 +1,106 @@
+/* Estilos para resaltar diferencias de código en Monaco Editor */
+
+/* Resaltado de caracteres específicos en amarillo - clase principal */
+.monaco-diff-char-highlight {
+  background-color: rgba(254, 240, 138, 0.95) !important;
+  color: #000 !important;
+  font-weight: 600 !important;
+  border-radius: 2px !important;
+  padding: 0 2px !important;
+  display: inline-block !important;
+}
+
+/* Tema oscuro - ajustar colores para mejor visibilidad */
+.monaco-editor.vs-dark .monaco-diff-char-highlight {
+  background-color: rgba(253, 224, 71, 0.9) !important;
+  color: #000 !important;
+}
+
+/* Resaltado de caracteres específicos en amarillo - clase inline */
+.char-highlight-yellow {
+  background-color: rgba(254, 240, 138, 0.95) !important;
+  color: #000 !important;
+  font-weight: 600 !important;
+  border-radius: 2px !important;
+  padding: 0 2px !important;
+}
+
+/* Tema oscuro - ajustar colores para mejor visibilidad */
+.monaco-editor.vs-dark .char-highlight-yellow {
+  background-color: rgba(253, 224, 71, 0.9) !important;
+  color: #000 !important;
+}
+
+/* Resaltado de caracteres específicos en amarillo - método directo */
+.char-diff-yellow-background {
+  background-color: rgba(254, 240, 138, 0.9) !important;
+  color: #000 !important;
+  font-weight: 600 !important;
+  border-radius: 3px !important;
+  padding: 0 3px !important;
+  margin: 0 1px !important;
+}
+
+/* Tema oscuro - ajustar colores para mejor visibilidad */
+.monaco-editor.vs-dark .char-diff-yellow-background {
+  background-color: rgba(253, 224, 71, 0.8) !important;
+  color: #000 !important;
+}
+
+/* Estilo alternativo usando decoraciones de Monaco */
+.monaco-editor .diff-char-highlight {
+  background-color: #fef3c7 !important;
+  color: #000 !important;
+  font-weight: 500 !important;
+}
+
+.monaco-editor.vs-dark .diff-char-highlight {
+  background-color: #fbbf24 !important;
+  color: #000 !important;
+}
+
+/* Líneas añadidas - fondo amarillo claro */
+.monaco-editor .bg-yellow-200\/30 {
+  background-color: rgba(254, 240, 138, 0.3) !important;
+}
+
+/* Líneas eliminadas - fondo amarillo muy suave */
+.monaco-editor .bg-yellow-200\/20 {
+  background-color: rgba(254, 240, 138, 0.2) !important;
+}
+
+/* Líneas modificadas - fondo amarillo más intenso */
+.monaco-editor .bg-yellow-300\/40 {
+  background-color: rgba(253, 224, 71, 0.4) !important;
+}
+
+/* Bordes existentes se mantienen */
+.monaco-editor .border-l-4 {
+  border-left-width: 4px !important;
+  border-left-style: solid !important;
+}
+
+.monaco-editor .border-green-500 {
+  border-left-color: #10b981 !important;
+}
+
+.monaco-editor .border-red-500 {
+  border-left-color: #ef4444 !important;
+}
+
+.monaco-editor .border-yellow-500 {
+  border-left-color: #eab308 !important;
+}
+
+/* Tema oscuro - ajustar colores para mejor visibilidad */
+.monaco-editor.vs-dark .bg-yellow-200\/30 {
+  background-color: rgba(254, 240, 138, 0.15) !important;
+}
+
+.monaco-editor.vs-dark .bg-yellow-200\/20 {
+  background-color: rgba(254, 240, 138, 0.1) !important;
+}
+
+.monaco-editor.vs-dark .bg-yellow-300\/40 {
+  background-color: rgba(253, 224, 71, 0.2) !important;
+}

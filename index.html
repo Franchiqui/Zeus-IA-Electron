@@ -1,0 +1,254 @@
+"content": "
+
+lang="es">
+
+charset="UTF-8">
+name="viewport" content="width=device-width, initial-scale=1.0">
+
+Api Generator Desktop
+
+
+rel="stylesheet" href="/styles/main.css">
+
+rel="preconnect" href="https://fonts.googleapis.com">
+rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+rel="icon" type="image/x-icon" href="/favicon.ico">
+
+/* Estilos básicos mientras carga la aplicación */
+* {
+margin: 0;
+padding: 0;
+box-sizing: border-box;
+}
+
+body {
+font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+min-height: 100vh;
+color: white;
+overflow: hidden;
+}
+
+#app {
+width: 100%;
+height: 100vh;
+}
+
+/* Pantalla de carga */
+.loading-screen {
+display: flex;
+flex-direction: column;
+justify-content: center;
+align-items: center;
+height: 100vh;
+text-align: center;
+padding: 20px;
+}
+
+.loading-spinner {
+width: 50px;
+height: 50px;
+border: 5px solid rgba(255, 255, 255, 0.3);
+border-radius: 50%;
+border-top-color: white;
+animation: spin 1s ease-in-out infinite;
+margin-bottom: 20px;
+}
+
+@keyframes spin {
+to { transform: rotate(360deg); }
+}
+
+.loading-text {
+font-size: 1.2rem;
+margin-bottom: 10px;
+}
+
+.loading-subtext {
+opacity: 0.8;
+font-size: 0.9rem;
+}
+
+.loading-screen.hidden {
+display: none;
+}
+
+/* Estilos para integración con Electron */
+.electron-info {
+position: fixed;
+bottom: 10px;
+right: 10px;
+background: rgba(0, 0, 0, 0.3);
+padding: 5px 10px;
+border-radius: 10px;
+font-size: 0.8rem;
+opacity: 0.7;
+}
+
+
+
+
+class="loading-screen" id="loadingScreen">
+class="loading-spinner">
+
+class="loading-text">
+Cargando Api Generator Desktop...
+
+class="loading-subtext">
+Versión 1.0.0
+
+
+
+id="app">
+
+
+
+
+class="electron-info" id="electronInfo">
+
+
+
+src</span>="/_next/static/chunks/main.js" defer>
+
+src</span>="/_next/static/chunks/pages/_app.js" defer>
+
+
+
+// Detectar si estamos en Electron
+const isElectron = typeof window.require !== 'undefined';
+
+// Mostrar información de Electron
+if (isElectron) {
+try {
+const { app, process } = window.require('electron');
+document.getElementById('electronInfo').textContent =
+`Electron v${process.versions.electron} | Node.js v${process.versions.node}`;
+
+// Ocultar pantalla de carga después de 2 segundos
+setTimeout(() => {
+document.getElementById('loadingScreen').classList.add('hidden');
+}, 2000);
+
+// Manejar eventos de Electron
+window.addEventListener('DOMContentLoaded', () => {
+// Tu lógica de integración con Electron aquí
+console.log('Aplicación cargada en Electron');
+});
+
+} catch (error) {
+console.error('Error al cargar módulos de Electron:', error);
+}
+} else {
+// No estamos en Electron, ocultar pantalla de carga inmediatamente
+document.getElementById('loadingScreen').classList.add('hidden');
+console.log('Aplicación cargada en navegador web');
+}
+
+// Función para comunicación con el proceso principal de Electron
+window.sendToElectron = (channel, data) => {
+if (isElectron && window.ipcRenderer) {
+window.ipcRenderer.send(channel, data);
+}
+};
+
+// Función para recibir mensajes de Electron
+window.receiveFromElectron = (channel, callback) => {
+if (isElectron && window.ipcRenderer) {
+window.ipcRenderer.on(channel, callback);
+}
+};
+
+// Inicializar comunicación si estamos en Electron
+if (isElectron) {
+try {
+const { ipcRenderer } = window.require('electron');
+window.ipcRenderer = ipcRenderer;
+
+// Ejemplo: Recibir mensaje del proceso principal
+window.receiveFromElectron('app-version', (event, version) => {
+console.log('Versión de la app:', version);
+});
+
+// Solicitar versión al cargar
+window.sendToElectron('get-app-version');
+
+} catch (error) {
+console.error('Error al inicializar IPC:', error);
+}
+}
+
+// Manejar errores de carga de recursos
+window.addEventListener('error', (event) => {
+console.error('Error al cargar recurso:', event);
+
+// Si hay error de carga, ocultar pantalla de carga
+document.getElementById('loadingScreen').classList.add('hidden');
+
+// Mostrar mensaje de error
+const errorDiv = document.createElement('div');
+errorDiv.style.cssText = `
+position: fixed;
+top: 50%;
+left: 50%;
+transform: translate(-50%, -50%);
+background: rgba(239, 68, 68, 0.9);
+color: white;
+padding: 20px;
+border-radius: 10px;
+text-align: center;
+max-width: 400px;
+z-index: 1000;
+`;
+errorDiv.innerHTML = `
+<h3>
+    Error al cargar la aplicación
+</h3>
+<p>
+    Verifica que los archivos de la aplicación estén en la carpeta correcta.
+</p>
+<p>
+    Error: ${event.message}
+</p>
+`;
+document.body.appendChild(errorDiv);
+});
+
+// Verificar si la aplicación principal se cargó correctamente
+setTimeout(() => {
+const loadingScreen = document.getElementById('loadingScreen');
+if (loadingScreen && !loadingScreen.classList.contains('hidden')) {
+// Si después de 5 segundos aún está cargando, mostrar error
+loadingScreen.innerHTML = `
+<div <span style="color: #61afef">style</span>="color: #ef4444; font-size: 2rem; margin-bottom: 20px;">
+    ⚠️
+</div>
+<div <span style="color: #61afef">class</span>="loading-text">
+    Error al cargar la aplicación
+</div>
+<div <span style="color: #61afef">class</span>="loading-subtext">
+    Verifica que los archivos de tu aplicación estén en:
+    <br>
+    <code>
+            dist/win-unpacked/resources/app/
+          </code>
+</div>
+<button <span style="color: #61afef">onclick</span>="location.reload()" <span style="color: #61afef">style</span>="
+    margin-top: 20px;
+    background: white;
+    color: #667eea;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-weight: bold;
+    ">
+    Reintentar
+</button>
+`;
+}
+}, 5000);
+
+
+
+",

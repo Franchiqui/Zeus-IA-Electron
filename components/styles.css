@@ -1,0 +1,302 @@
+.chat-terminal-bubble {
+  /* Estilos base de la burbuja de terminal */
+  background-color: #1e1e1e; /* Fondo negro/oscuro */
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 15px;
+  margin-top: 15px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease-in-out;
+}
+
+.chat-terminal-bubble.hidden {
+  max-height: 0; 
+  overflow: hidden;
+  padding-top: 0; 
+  padding-bottom: 0;
+  margin-top: 0;
+  opacity: 0;
+  transition: all 0.3s ease-in-out;
+}
+
+.chat-terminal-bubble.visible {
+  opacity: 1;
+}
+
+.terminal-header {
+  color: #00ff00; /* Color de cursor o prompt */
+  font-weight: bold;
+  margin-bottom: 10px;
+  font-family: 'Consolas', 'Monospace', monospace;
+  font-size: 0.9em;
+}
+
+.terminal-output {
+  /* Área donde se muestra el historial de comandos */
+  padding-bottom: 10px;
+  overflow-y: auto;
+  max-height: 300px; /* Limita la altura del output */
+  border-bottom: 1px dashed #333;
+  margin-bottom: 10px;
+  /* Estilos para el texto de la consola */
+  font-family: 'Consolas', 'Monospace', monospace;
+  font-size: 0.9em;
+  color: #cccccc;
+}
+
+.terminal-line {
+  margin: 3px 0;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+.terminal-toggle-container {
+  margin-bottom: 10px;
+  text-align: right;
+}
+
+.toggle-terminal-btn {
+  background-color: #2a2a2a;
+  border: 1px solid #444;
+  color: #ffffff;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9em;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.toggle-terminal-btn:hover {
+  background-color: #3a3a3a;
+  border-color: #666;
+}
+
+.toggle-terminal-btn:active {
+  transform: scale(0.98);
+}
+
+.chat-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 350px;
+  max-height: 500px;
+  background-color: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  background-color: #333;
+  border-bottom: 1px solid #444;
+}
+
+.chat-header h3 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1em;
+  font-weight: 600;
+}
+
+.chat-messages-feed {
+  flex: 1;
+  padding: 15px;
+  overflow-y: auto;
+  min-height: 200px;
+  background-color: #1e1e1e;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat-message {
+  background-color: #2a2a2a;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border-left: 3px solid #007acc;
+}
+
+.message-text {
+  color: #cccccc;
+  font-size: 0.9em;
+}
+
+.message-input-area {
+  padding: 15px;
+  border-top: 1px solid #444;
+  background-color: #2a2a2a;
+  display: flex;
+  gap: 10px;
+}
+
+.message-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background-color: #1e1e1e;
+  color: #ffffff;
+  font-size: 0.9em;
+}
+
+.message-input:focus {
+  outline: none;
+  border-color: #007acc;
+}
+
+.send-button {
+  padding: 8px 16px;
+  background-color: #007acc;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9em;
+  font-weight: 500;
+}
+
+.send-button:hover {
+  background-color: #005a9e;
+}
+
+/* Estilos del input/prompt */
+.terminal-input-form {
+  display: flex;
+  gap: 10px;
+}
+
+.terminal-input {
+  flex-grow: 1;
+  padding: 8px;
+  border: none;
+  border-radius: 4px;
+  background-color: #2d2d2d;
+  color: #ffffff;
+  font-family: 'Consolas', 'Monospace', monospace;
+  font-size: 1em;
+}
+
+.terminal-input-form button {
+  padding: 8px 15px;
+  background-color: #007acc; /* Color de botón azul */
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.terminal-input-form button:hover:not(:disabled) {
+  background-color: #005fa3;
+}
+
+.terminal-input-form button:disabled {
+  background-color: #333;
+  cursor: not-allowed;
+}
+
+/* Ocultar scrollbar pero mantener funcionalidad de scroll */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* Internet Explorer 10+ */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Safari and Chrome */
+}
+
+/* Estilos para ocultar la barra de scroll mientras se mantiene la funcionalidad de scroll */
+.terminal-scroll-container * {
+  overflow-wrap: break-word;
+}
+
+.terminal-scroll-container {
+  overflow-y: auto;
+  /* Ocultar scrollbar para Webkit (Chrome, Safari)
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.terminal-scroll-container::-webkit-scrollbar {
+  display: none; /* Safari and Chrome */
+}
+
+/* Estilos para EnvironmentPathSetter */
+.data-path-setter {
+  padding: 6px 4px 6px 8px;
+  border-bottom: 1px solid hsl(var(--border));
+  background-color: hsl(var(--input));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.data-path-label {
+  font-weight: 600;
+  color: #60a5fa;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+
+.data-path-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.data-path-input {
+  flex: 1;
+  padding: 4px 3px;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  background-color: #030712;
+  color: #e5e7eb;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.data-path-input:focus {
+  border-color: #3b82f6;
+}
+
+.data-path-input::placeholder {
+  color: #6b7280;
+}
+
+.data-path-button {
+  padding: 4px 8px;
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 500;
+  transition: background-color 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+.data-path-button:hover:not(:disabled) {
+  background-color: #2563eb;
+}
+
+.data-path-button:disabled {
+  background-color: #1e40af;
+  cursor: not-allowed;
+  opacity: 0.6;
+}

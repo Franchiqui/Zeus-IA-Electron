@@ -1,0 +1,27 @@
+function createWindow() {
+  const appBasePath = getAppBasePath();
+  const headerColor = '#111827'; // Color aproximado de bg-gray-900
+
+  const win = new BrowserWindow({
+    width: 1400,
+    height: 800,
+    autoHideMenuBar: true,
+    backgroundColor: '#060a14',
+    ...(process.platform === 'win32' ? {
+      titleBarStyle: 'hidden',
+      titleBarOverlay: {
+        color: headerColor,
+        symbolColor: '#9ca3af',
+        height: 40
+      }
+    } : {}),
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
+    },
+    show: false
+  });
+
+  win.setMenuBarVisibility(false);
+  win.removeMenu();

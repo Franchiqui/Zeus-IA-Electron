@@ -1,0 +1,575 @@
+{
+  "id": "6i5pbukpvsgludq",
+  "title": "ApiCol Conocimiento",
+  "description": "Para organizar el almacenamiento de esta API Se utilizará una base de datos local de Pocket Base.\r\n\r\n## Documento de Arquitectura de API: Apicol API v1.0\r\n\r\n### 1. Resumen Ejecutivo y Propósito\r\n\r\nApicol API es una interfaz de programación de aplicaciones (API) RESTful diseñada para ser el núcleo de un Sistema de Gestión de Conocimiento Aumentado por Recuperación (RAG) y Orquestación de Modelos de Lenguaje de Gran Escala (LLM). Su propósito es abstraer la complejidad de la interacción con múltiples proveedores de IA y la gestión de conocimiento estructurado, proporcionando una capa de servicio unificada, segura y escalable.\r\n\r\nLa API permite a los desarrolladores y sistemas externos:\r\n- Orquestar Modelos de IA: Configurar, gestionar y consultar una flota heterogénea de modelos de lenguaje (OpenAI, Google, Anthropic, Ollama, etc.) a través de una única interfaz.\r\n- Gestionar Conocimiento Jerárquico: Crear, mantener y navegar por una base de conocimiento organizada en una taxonomía de árbol (categorías anidadas), donde cada nodo puede contener documentos o fragmentos de información.\r\n- Ejecutar Consultas Contextuales (RAG): Realizar preguntas en lenguaje natural que, de forma transparente, recuperan el contexto más relevante de la base de conocimiento y lo inyectan en el prompt del modelo configurado, generando respuestas precisas y fundamentadas.\r\n\r\nLa metáfora de \"categorías dentro de categorías\" se materializa en un sistema de taxonomías flexibles, permitiendo una organización lógica y navegable del conocimiento, desde lo más general hasta lo más específico.\r\n\r\n### 2. Stack Tecnológico Propuesto\r\n\r\n- Framework API: Python con FastAPI (por su rendimiento, validación automática con Pydantic y generación de documentación OpenAPI/Swagger).\r\n- Base de Datos Relacional: PostgreSQL (para almacenar la estructura de taxonomías, configuraciones de modelos, metadatos de documentos y usuarios).\r\n- Base de Datos Vectorial: pgvector (extensión de PostgreSQL) o Qdrant (servicio dedicado) para almacenar y buscar embeddings de forma eficiente.\r\n- Procesamiento de Documentos: Apache Tika o Unstructured.io (para extraer texto de PDFs, DOCX, etc.).\r\n- Generación de Embeddings: Modelo de embeddings de OpenAI (`text-embedding-3-small`), Google (`text-embedding-004`) o modelos locales como BGE o all-MiniLM-L6-v2.\r\n- Autenticación y Autorización: OAuth 2.0 con JWT (JSON Web Tokens) y control de acceso basado en roles (RBAC).\r\n- Contenedorización: Docker y Docker Compose para entornos de desarrollo y producción.\r\n- Documentación: OpenAPI 3.1 (generada automáticamente por FastAPI).\r\n\r\n### 3. Modelo de Datos Conceptual\r\n\r\n#### 3.1. Entidades Principales\r\n\r\n- `User`: Representa un usuario del sistema (Administrador, Editor, Consultor).\r\n- `AIProvider`: Configuración de un proveedor de IA (nombre, endpoint base, tipo de API key).\r\n- `AIModel`: Instancia de un modelo configurado (ej. `gpt-4-turbo`). Pertenece a un `AIProvider`. Contiene parámetros por defecto (temperatura, `max_tokens`, etc.).\r\n- `Category`: Nodo en el árbol de taxonomía. Tiene una relación padre-hijo recursiva (`parent_id`). Almacena nombre, descripción y metadatos.\r\n- `Document`: Representa un archivo o texto plano subido. Pertenece a una `Category`. Contiene el texto original y metadatos (tipo MIME, fecha de subida).\r\n- `DocumentChunk`: Fragmento de un `Document` (ej. 500 tokens). Es la unidad que se vectoriza y almacena en la base de datos vectorial. Contiene el texto del fragmento y su `embedding`.\r\n- `Conversation`: Historial de una sesión de preguntas y respuestas. Puede estar asociada a un `AIModel` y a un contexto de `Category`.\r\n- `QueryLog`: Registro de cada consulta RAG, incluyendo el prompt final, los fragmentos recuperados, el modelo usado y la respuesta generada.\r\n\r\n#### 3.2. Relaciones Clave\r\n\r\n- `Category` 1:N `Category` (auto-referencia jerárquica).\r\n- `Category` 1:N `Document`.\r\n- `Document` 1:N `DocumentChunk`.\r\n- `AIModel` 1:N `Conversation`.\r\n- `User` 1:N `Conversation`.\r\n\r\n### 4. Endpoints de la API (RESTful)\r\n\r\nLa API se estructura en los siguientes recursos principales. Todas las rutas están prefijadas con `/api/v1`.\r\n\r\n#### 4.1. Gestión de Modelos de IA (`/models`)\r\n\r\n| Método | Ruta | Descripción |\r\n| :--- | :--- | :--- |\r\n| `GET` | `/providers` | Lista los proveedores de IA disponibles y configurados. |\r\n| `POST` | `/providers` | Registra un nuevo proveedor (ej. añadir una API key para OpenAI). |\r\n| `GET` | `/models` | Lista todas las instancias de modelos configurados. |\r\n| `POST` | `/models` | Crea una nueva configuración de modelo (selecciona proveedor, define parámetros). |\r\n| `GET` | `/models/{model_id}` | Obtiene los detalles de un modelo específico. |\r\n| `PATCH` | `/models/{model_id}` | Actualiza la configuración de un modelo (ej. cambiar temperatura). |\r\n| `DELETE` | `/models/{model_id}` | Elimina una configuración de modelo. |\r\n\r\n#### 4.2. Gestión de Taxonomías (`/taxonomies`)\r\n\r\n| Método | Ruta | Descripción |\r\n| :--- | :--- | :--- |\r\n| `GET` | `/categories` | Lista las categorías raíz (primer nivel). Soporta paginación. |\r\n| `GET` | `/categories/{category_id}` | Obtiene una categoría y sus hijos directos (subcategorías). |\r\n| `POST` | `/categories` | Crea una nueva categoría. El cuerpo incluye `parent_id` (opcional, para crear subcategorías). |\r\n| `PATCH` | `/categories/{category_id}` | Actualiza el nombre o descripción de una categoría. |\r\n| `DELETE` | `/categories/{category_id}` | Elimina una categoría y todo su sub-árbol (cascada). |\r\n| `POST` | `/categories/{category_id}/move` | Mueve una categoría a un nuevo padre (reorganización del árbol). |\r\n\r\n#### 4.3. Gestión de Documentos (`/documents`)\r\n\r\n| Método | Ruta | Descripción |\r\n| :--- | :--- | :--- |\r\n| `GET` | `/categories/{category_id}/documents` | Lista los documentos dentro de una categoría. |\r\n| `POST` | `/categories/{category_id}/documents` | Sube un nuevo documento a una categoría. Acepta `multipart/form-data` (archivo) o `application/json` (texto plano). |\r\n| `GET` | `/documents/{document_id}` | Obtiene los metadatos y el contenido de un documento. |\r\n| `DELETE` | `/documents/{document_id}` | Elimina un documento y sus fragmentos vectorizados. |\r\n| `POST` | `/documents/{document_id}/reprocess` | Fuerza el re-vectorizado de un documento (útil si se cambia el modelo de embeddings). |\r\n\r\n#### 4.4. Consultas Contextuales (RAG) (`/queries`)\r\n\r\n| Método | Ruta | Descripción |\r\n| :--- | :--- | :--- |\r\n| `POST` | `/queries/ask` | Endpoint principal. Realiza una pregunta. Cuerpo: `{ \"question\": \"...\", \"model_id\": \"...\", \"category_id\": \"...\" (opcional, para restringir búsqueda), \"top_k\": 5 (opcional) }`. Devuelve la respuesta del modelo y los fragmentos de contexto utilizados. |\r\n| `POST` | `/queries/stream` | Versión del endpoint `/ask` que utiliza Server-Sent Events (SSE) para transmit",
+  "code": "import express, { Request, Response } from 'express';\nimport { z } from 'zod';\nimport swaggerUi from 'swagger-ui-express';\nimport swaggerJsdoc from 'swagger-jsdoc';\nimport cors from 'cors';\nimport dotenv from 'dotenv';\n\nconst __zeusFilterObjectToPbFilter = (value: any): string => {\n  if (value == null) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value !== 'object' || Array.isArray(value)) return String(value);\n\n  const entries = Object.entries(value as Record<string, unknown>);\n  return entries\n    .map(([k, v]) => {\n      if (v === null) return k + ' = null';\n      if (typeof v === 'number' || typeof v === 'boolean') return k + ' = ' + String(v);\n      const escaped = String(v).replace(/'/g, \"\\'\");\n      return k + \" = '\" + escaped + \"'\";\n    })\n    .join(' && ');\n};\n\nconst __zeusCollection = (pb: any, name: string) => {\n  const svc = (pb as any).collection(name) as any;\n\n  if (typeof svc.getRecord !== 'function') {\n    svc.getRecord = (id: string, options?: any) => svc.getOne(id, options);\n  }\n  if (typeof svc.createRecord !== 'function') {\n    svc.createRecord = (data: any, options?: any) => svc.create(data, options);\n  }\n  if (typeof svc.updateRecord !== 'function') {\n    svc.updateRecord = (id: string, data: any, options?: any) => svc.update(id, data, options);\n  }\n  if (typeof svc.deleteRecord !== 'function') {\n    svc.deleteRecord = (id: string, options?: any) => svc.delete(id, options);\n  }\n  if (typeof svc.getMany !== 'function') {\n    svc.getMany = async (params?: any) => {\n      const rawPage = Number(params?.page ?? 1);\n      const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;\n      const rawLimit = Number(params?.limit ?? params?.perPage ?? 30);\n      const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : 30;\n      const options: Record<string, unknown> = {};\n\n      if (params?.sort != null) options.sort = String(params.sort);\n      if (params?.expand != null) options.expand = params.expand;\n      if (params?.fields != null) options.fields = params.fields;\n      if (params?.filter != null) {\n        const filter = __zeusFilterObjectToPbFilter(params.filter);\n        if (filter) options.filter = filter;\n      }\n\n      const res = await svc.getList(page, limit, options);\n      return {\n        records: Array.isArray(res?.items) ? res.items : [],\n        page: typeof res?.page === 'number' ? res.page : page,\n        limit: typeof res?.perPage === 'number' ? res.perPage : limit,\n        total: typeof res?.totalItems === 'number' ? res.totalItems : 0,\n        totalPages: typeof res?.totalPages === 'number' ? res.totalPages : 1\n      };\n    };\n  }\n\n  return svc;\n};\n\n\ndotenv.config();\n\nconst app = express();\napp.use(express.json());\napp.use(express.urlencoded({ extended: true }));\napp.use(cors());\n\n// Zod Schemas\nexport const ApiColConocimientoSchema = z.object({\n  id: z.string().optional(),\n  name: z.string().min(1, 'Name is required'),\n  description: z.string().optional(),\n  createdAt: z.string().optional(),\n  updatedAt: z.string().optional(),\n});\n\nexport type ApiColConocimiento = z.infer<typeof ApiColConocimientoSchema>;\n\n// Mock Data Store\nlet records: any[] = [\n  { id: '1', name: 'Sample Record', description: 'This is a sample generated record' }\n];\n\n/**\n * @swagger\n * /api/apicol-conocimiento:\n *   get:\n *     summary: Get all ApiCol Conocimiento records\n *     responses:\n *       200:\n *         description: List of records\n */\napp.get('/api/apicol-conocimiento', (req: Request, res: Response) => {\n  res.json(records);\n});\n\n/**\n * @swagger\n * /api/apicol-conocimiento:\n *   post:\n *     summary: Create a new ApiCol Conocimiento record\n *     responses:\n *       201:\n *         description: Created record\n */\napp.post('/api/apicol-conocimiento', (req: Request, res: Response) => {\n  try {\n    const data = ApiColConocimientoSchema.parse(req.body);\n    const newRecord = { ...data, id: Date.now().toString() };\n    records.push(newRecord);\n    res.status(201).json(newRecord);\n  } catch (error) {\n    res.status(400).json({ error: 'Invalid data' });\n  }\n});\n\n/**\n * @swagger\n * /api/apicol-conocimiento/{id}:\n *   get:\n *     summary: Get ApiCol Conocimiento record by id\n *     parameters:\n *       - in: path\n *         name: id\n *         required: true\n *         schema:\n *           type: string\n *     responses:\n *       200:\n *         description: Record\n *       404:\n *         description: Not found\n */\napp.get('/api/apicol-conocimiento/:id', (req: Request, res: Response) => {\n  const rec = records.find((r) => r.id === req.params.id);\n  if (!rec) return res.status(404).json({ error: 'Not found' });\n  res.json(rec);\n});\n\n/**\n * @swagger\n * /api/apicol-conocimiento/{id}:\n *   put:\n *     summary: Update ApiCol Conocimiento record\n *     parameters:\n *       - in: path\n *         name: id\n *         required: true\n *         schema:\n *           type: string\n *     requestBody:\n *       required: true\n *       content:\n *         application/json:\n *           schema:\n *             type: object\n *     responses:\n *       200:\n *         description: Updated\n *       404:\n *         description: Not found\n */\napp.put('/api/apicol-conocimiento/:id', (req: Request, res: Response) => {\n  const i = records.findIndex((r) => r.id === req.params.id);\n  if (i === -1) return res.status(404).json({ error: 'Not found' });\n  const data = ApiColConocimientoSchema.partial().parse(req.body);\n  records[i] = { ...records[i], ...data };\n  res.json(records[i]);\n});\n\n/**\n * @swagger\n * /api/apicol-conocimiento/{id}:\n *   delete:\n *     summary: Delete ApiCol Conocimiento record\n *     parameters:\n *       - in: path\n *         name: id\n *         required: true\n *         schema:\n *           type: string\n *     responses:\n *       204:\n *         description: Deleted\n *       404:\n *         description: Not found\n */\napp.delete('/api/apicol-conocimiento/:id', (req: Request, res: Response) => {\n  const i = records.findIndex((r) => r.id === req.params.id);\n  if (i === -1) return res.status(404).json({ error: 'Not found' });\n  records.splice(i, 1);\n  res.status(204).send();\n});\n\n// Swagger Config\nconst swaggerOptions = {\n  definition: {\n    openapi: '3.0.0',\n    info: {\n      title: 'ApiCol Conocimiento API',\n      version: '1.0.0',\n      description: 'Para organizar el almacenamiento de esta API Se utilizará una base de datos local de Pocket Base. Apicol API es una interfaz de programación de aplicaciones (API) RESTful diseñada para ser el núcleo de un Sistema de Gestión de Conocimiento Aumentado por Recuperación (RAG) y Orquestación de Modelos de Lenguaje de Gran Escala (LLM). Su propósito es abstraer la complejidad de la interacción con múltiples proveedores de IA y la gestión de conocimiento estructurado,…',\n    },\n    servers: [{ url: 'http://localhost:8743' }],\n    paths:\n      {\n        \"/api/apicol-conocimiento\": {\n          \"get\": {\n            \"tags\": [\n              \"ApiCol Conocimiento\"\n            ],\n            \"summary\": \"ApiCol Conocimiento: GET /api/apicol-conocimiento\",\n            \"description\": \"Operación GET sobre /api/apicol-conocimiento\",\n            \"responses\": {\n              \"200\": {\n                \"description\": \"OK\"\n              }\n            },\n            \"parameters\": [\n              {\n                \"in\": \"query\",\n                \"name\": \"page\",\n                \"required\": false,\n                \"description\": \"Número de página (empieza en 1)\",\n                \"schema\": {\n                  \"type\": \"integer\",\n                  \"minimum\": 1,\n                  \"default\": 1\n                }\n              },\n              {\n                \"in\": \"query\",\n                \"name\": \"limit\",\n                \"required\": false,\n                \"description\": \"Cuántos ítems devolver por página\",\n                \"schema\": {\n                  \"type\": \"integer\",\n                  \"minimum\": 1,\n                  \"maximum\": 500,\n                  \"default\": 20\n                }\n              },\n              {\n                \"in\": \"query\",\n                \"name\": \"offset\",\n                \"required\": false,\n                \"description\": \"Desplazamiento alternativo a page/limit (índice base 0)\",\n                \"schema\": {\n                  \"type\": \"integer\",\n                  \"minimum\": 0,\n                  \"default\": 0\n                }\n              },\n              {\n                \"in\": \"query\",\n                \"name\": \"search\",\n                \"required\": false,\n                \"description\": \"Texto de búsqueda / filtro libre\",\n                \"schema\": {\n                  \"type\": \"string\"\n                }\n              },\n              {\n                \"in\": \"query\",\n                \"name\": \"sortBy\",\n                \"required\": false,\n                \"description\": \"Campo por el que ordenar\",\n                \"schema\": {\n                  \"type\": \"string\"\n                }\n              },\n              {\n                \"in\": \"query\",\n                \"name\": \"sortOrder\",\n                \"required\": false,\n                \"description\": \"asc = ascendente, desc = descendente\",\n                \"schema\": {\n                  \"type\": \"string\",\n                  \"enum\": [\n                    \"asc\",\n                    \"desc\"\n                  ]\n                }\n              }\n            ]\n          },\n          \"post\": {\n            \"tags\": [\n              \"ApiCol Conocimiento\"\n            ],\n            \"summary\": \"ApiCol Conocimiento: POST /api/apicol-conocimiento\",\n            \"description\": \"Operación POST sobre /api/apicol-conocimiento\",\n            \"responses\": {\n              \"200\": {\n                \"description\": \"OK\"\n              },\n              \"201\": {\n                \"description\": \"Created\"\n              }\n            }\n          }\n        },\n        \"/api/apicol-conocimiento/{id}\": {\n          \"get\": {\n            \"tags\": [\n              \"ApiCol Conocimiento\"\n            ],\n            \"summary\": \"ApiCol Conocimiento: GET /api/apicol-conocimiento/{id}\",\n            \"description\": \"Operación GET sobre /api/apicol-conocimiento/{id}\",\n            \"responses\": {\n              \"200\": {\n                \"description\": \"OK\"\n              }\n            },\n            \"parameters\": [\n              {\n                \"in\": \"path\",\n                \"name\": \"id\",\n                \"required\": true,\n                \"description\": \"Identificador id\",\n                \"schema\": {\n                  \"type\": \"string\"\n                }\n              }\n            ]\n          },\n          \"put\": {\n            \"tags\": [\n              \"ApiCol Conocimiento\"\n            ],\n            \"summary\": \"ApiCol Conocimiento: PUT /api/apicol-conocimiento/{id}\",\n            \"description\": \"Operación PUT sobre /api/apicol-conocimiento/{id}\",\n            \"responses\": {\n              \"200\": {\n                \"description\": \"OK\"\n              }\n            },\n            \"parameters\": [\n              {\n                \"in\": \"path\",\n                \"name\": \"id\",\n                \"required\": true,\n                \"description\": \"Identificador id\",\n                \"schema\": {\n                  \"type\": \"string\"\n                }\n              }\n            ]\n          },\n          \"delete\": {\n            \"tags\": [\n              \"ApiCol Conocimiento\"\n            ],\n            \"summary\": \"ApiCol Conocimiento: DELETE /api/apicol-conocimiento/{id}\",\n            \"description\": \"Operación DELETE sobre /api/apicol-conocimiento/{id}\",\n            \"responses\": {\n              \"204\": {\n                \"description\": \"No content\"\n              }\n            },\n            \"parameters\": [\n              {\n                \"in\": \"path\",\n                \"name\": \"id\",\n                \"required\": true,\n                \"description\": \"Identificador id\",\n                \"schema\": {\n                  \"type\": \"string\"\n                }\n              }\n            ]\n          }\n        }\n      }\n  },\n  apis: ['./runtime-api.ts'],\n};\n\nfunction __zeusApplyDefinitionPathsToSwaggerSpec(spec: any, definition: any): any {\n  const defPaths = definition && typeof definition === 'object' ? definition.paths : null;\n  if (!defPaths || typeof defPaths !== 'object' || !spec || typeof spec !== 'object') return spec;\n  if (!spec.paths || typeof spec.paths !== 'object') spec.paths = {};\n  const verbs = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace'];\n  for (const pathKey of Object.keys(defPaths)) {\n    const defItem = (defPaths as Record<string, unknown>)[pathKey];\n    if (!defItem || typeof defItem !== 'object') continue;\n    const specItem = (spec.paths as Record<string, unknown>)[pathKey];\n    if (!specItem || typeof specItem !== 'object') continue;\n    for (const verb of verbs) {\n      const defOp = (defItem as Record<string, unknown>)[verb];\n      const specOp = (specItem as Record<string, unknown>)[verb];\n      if (!defOp || typeof defOp !== 'object' || !specOp || typeof specOp !== 'object') continue;\n      if (Array.isArray((defOp as { parameters?: unknown }).parameters)) {\n        const dp = (defOp as { parameters: unknown[] }).parameters;\n        if (dp.length > 0) (specOp as { parameters: unknown[] }).parameters = dp;\n      }\n      const defRb = (defOp as { requestBody?: unknown }).requestBody;\n      if (\n        defRb &&\n        typeof defRb === 'object' &&\n        defRb !== null &&\n        typeof (defRb as { content?: unknown }).content === 'object' &&\n        (defRb as { content: unknown }).content !== null\n      ) {\n        (specOp as { requestBody: unknown }).requestBody = defRb;\n      }\n    }\n  }\n  return spec;\n}\n\nconst swaggerSpec = __zeusApplyDefinitionPathsToSwaggerSpec(swaggerJsdoc(swaggerOptions), (swaggerOptions as { definition?: { paths?: unknown } }).definition);\n\napp.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, { customCss: \".swagger-ui .info .title{font-size:1.5rem!important;line-height:1.3;font-weight:600}.swagger-ui .info .description{font-size:.875rem!important;line-height:1.55!important;max-width:56rem;color:#3b4151;font-weight:400}.swagger-ui .info .description p{margin:.45em 0}.swagger-ui .info .description ul,.swagger-ui .info .description ol{margin:.4em 0 .4em 1.15em}.swagger-ui .info .description h1,.swagger-ui .info .description h2,.swagger-ui .info .description h3,.swagger-ui .info .description h4{font-size:1rem!important;font-weight:600!important;margin:.7em 0 .35em!important;line-height:1.35!important}\" }));\napp.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, { customCss: \".swagger-ui .info .title{font-size:1.5rem!important;line-height:1.3;font-weight:600}.swagger-ui .info .description{font-size:.875rem!important;line-height:1.55!important;max-width:56rem;color:#3b4151;font-weight:400}.swagger-ui .info .description p{margin:.45em 0}.swagger-ui .info .description ul,.swagger-ui .info .description ol{margin:.4em 0 .4em 1.15em}.swagger-ui .info .description h1,.swagger-ui .info .description h2,.swagger-ui .info .description h3,.swagger-ui .info .description h4{font-size:1rem!important;font-weight:600!important;margin:.7em 0 .35em!important;line-height:1.35!important}\" }));\n\nconst PORT = process.env.PORT || 3000;\napp.listen(PORT, () => {\n  console.log(`Server running on http://localhost:${PORT}`);\n  console.log(`Swagger UI available on http://localhost:${PORT}/api-docs and http://localhost:${PORT}/docs`);\n});\n\n",
+  "documentation": "# ApiCol Conocimiento API Documentation\n\n## Description\nPara organizar el almacenamiento de esta API Se utilizará una base de datos local de Pocket Base.\r\n\r\n## Documento de Arquitectura de API: Apicol API v1.0\r\n\r\n### 1. Resumen Ejecutivo y Propósito\r\n\r\nApicol API es una interfaz de programación de aplicaciones (API) RESTful diseñada para ser el núcleo de un Sistema de Gestión de Conocimiento Aumentado por Recuperación (RAG) y Orquestación de Modelos de Lenguaje de Gran Escala (LLM). Su propósito es abstraer la complejidad de la interacción con múltiples proveedores de IA y la gestión de conocimiento estructurado, proporcionando una capa de servicio unificada, segura y escalable.\r\n\r\nLa API permite a los desarrolladores y sistemas externos:\r\n- Orquestar Modelos de IA: Configurar, gestionar y consultar una flota heterogénea de modelos de lenguaje (OpenAI, Google, Anthropic, Ollama, etc.) a través de una única interfaz.\r\n- Gestionar Conocimiento Jerárquico: Crear, mantener y navegar por una base de conocimiento organizada en una taxonomía de árbol (categorías anidadas), donde cada nodo puede contener documentos o fragmentos de información.\r\n- Ejecutar Consultas Contextuales (RAG): Realizar preguntas en lenguaje natural que, de forma transparente, recuperan el contexto más relevante de la base de conocimiento y lo inyectan en el prompt del modelo configurado, generando respuestas precisas y fundamentadas.\r\n\r\nLa metáfora de \"categorías dentro de categorías\" se materializa en un sistema de taxonomías flexibles, permitiendo una organización lógica y navegable del conocimiento, desde lo más general hasta lo más específico.\r\n\r\n### 2. Stack Tecnológico Propuesto\r\n\r\n- Framework API: Python con FastAPI (por su rendimiento, validación automática con Pydantic y generación de documentación OpenAPI/Swagger).\r\n- Base de Datos Relacional: PostgreSQL (para almacenar la estructura de taxonomías, configuraciones de modelos, metadatos de documentos y usuarios).\r\n- Base de Datos Vectorial: pgvector (extensión de PostgreSQL) o Qdrant (servicio dedicado) para almacenar y buscar embeddings de forma eficiente.\r\n- Procesamiento de Documentos: Apache Tika o Unstructured.io (para extraer texto de PDFs, DOCX, etc.).\r\n- Generación de Embeddings: Modelo de embeddings de OpenAI (`text-embedding-3-small`), Google (`text-embedding-004`) o modelos locales como BGE o all-MiniLM-L6-v2.\r\n- Autenticación y Autorización: OAuth 2.0 con JWT (JSON Web Tokens) y control de acceso basado en roles (RBAC).\r\n- Contenedorización: Docker y Docker Compose para entornos de desarrollo y producción.\r\n- Documentación: OpenAPI 3.1 (generada automáticamente por FastAPI).\r\n\r\n### 3. Modelo de Datos Conceptual\r\n\r\n#### 3.1. Entidades Principales\r\n\r\n- `User`: Representa un usuario del sistema (Administrador, Editor, Consultor).\r\n- `AIProvider`: Configuración de un proveedor de IA (nombre, endpoint base, tipo de API key).\r\n- `AIModel`: Instancia de un modelo configurado (ej. `gpt-4-turbo`). Pertenece a un `AIProvider`. Contiene parámetros por defecto (temperatura, `max_tokens`, etc.).\r\n- `Category`: Nodo en el árbol de taxonomía. Tiene una relación padre-hijo recursiva (`parent_id`). Almacena nombre, descripción y metadatos.\r\n- `Document`: Representa un archivo o texto plano subido. Pertenece a una `Category`. Contiene el texto original y metadatos (tipo MIME, fecha de subida).\r\n- `DocumentChunk`: Fragmento de un `Document` (ej. 500 tokens). Es la unidad que se vectoriza y almacena en la base de datos vectorial. Contiene el texto del fragmento y su `embedding`.\r\n- `Conversation`: Historial de una sesión de preguntas y respuestas. Puede estar asociada a un `AIModel` y a un contexto de `Category`.\r\n- `QueryLog`: Registro de cada consulta RAG, incluyendo el prompt final, los fragmentos recuperados, el modelo usado y la respuesta generada.\r\n\r\n#### 3.2. Relaciones Clave\r\n\r\n- `Category` 1:N `Category` (auto-referencia jerárquica).\r\n- `Category` 1:N `Document`.\r\n- `Document` 1:N `DocumentChunk`.\r\n- `AIModel` 1:N `Conversation`.\r\n- `User` 1:N `Conversation`.\r\n\r\n### 4. Endpoints de la API (RESTful)\r\n\r\nLa API se estructura en los siguientes recursos principales. Todas las rutas están prefijadas con `/api/v1`.\r\n\r\n#### 4.1. Gestión de Modelos de IA (`/models`)\r\n\r\n| Método | Ruta | Descripción |\r\n| :--- | :--- | :--- |\r\n| `GET` | `/providers` | Lista los proveedores de IA disponibles y configurados. |\r\n| `POST` | `/providers` | Registra un nuevo proveedor (ej. añadir una API key para OpenAI). |\r\n| `GET` | `/models` | Lista todas las instancias de modelos configurados. |\r\n| `POST` | `/models` | Crea una nueva configuración de modelo (selecciona proveedor, define parámetros). |\r\n| `GET` | `/models/{model_id}` | Obtiene los detalles de un modelo específico. |\r\n| `PATCH` | `/models/{model_id}` | Actualiza la configuración de un modelo (ej. cambiar temperatura). |\r\n| `DELETE` | `/models/{model_id}` | Elimina una configuración de modelo. |\r\n\r\n#### 4.2. Gestión de Taxonomías (`/taxonomies`)\r\n\r\n| Método | Ruta | Descripción |\r\n| :--- | :--- | :--- |\r\n| `GET` | `/categories` | Lista las categorías raíz (primer nivel). Soporta paginación. |\r\n| `GET` | `/categories/{category_id}` | Obtiene una categoría y sus hijos directos (subcategorías). |\r\n| `POST` | `/categories` | Crea una nueva categoría. El cuerpo incluye `parent_id` (opcional, para crear subcategorías). |\r\n| `PATCH` | `/categories/{category_id}` | Actualiza el nombre o descripción de una categoría. |\r\n| `DELETE` | `/categories/{category_id}` | Elimina una categoría y todo su sub-árbol (cascada). |\r\n| `POST` | `/categories/{category_id}/move` | Mueve una categoría a un nuevo padre (reorganización del árbol). |\r\n\r\n#### 4.3. Gestión de Documentos (`/documents`)\r\n\r\n| Método | Ruta | Descripción |\r\n| :--- | :--- | :--- |\r\n| `GET` | `/categories/{category_id}/documents` | Lista los documentos dentro de una categoría. |\r\n| `POST` | `/categories/{category_id}/documents` | Sube un nuevo documento a una categoría. Acepta `multipart/form-data` (archivo) o `application/json` (texto plano). |\r\n| `GET` | `/documents/{document_id}` | Obtiene los metadatos y el contenido de un documento. |\r\n| `DELETE` | `/documents/{document_id}` | Elimina un documento y sus fragmentos vectorizados. |\r\n| `POST` | `/documents/{document_id}/reprocess` | Fuerza el re-vectorizado de un documento (útil si se cambia el modelo de embeddings). |\r\n\r\n#### 4.4. Consultas Contextuales (RAG) (`/queries`)\r\n\r\n| Método | Ruta | Descripción |\r\n| :--- | :--- | :--- |\r\n| `POST` | `/queries/ask` | Endpoint principal. Realiza una pregunta. Cuerpo: `{ \"question\": \"...\", \"model_id\": \"...\", \"category_id\": \"...\" (opcional, para restringir búsqueda), \"top_k\": 5 (opcional) }`. Devuelve la respuesta del modelo y los fragmentos de contexto utilizados. |\r\n| `POST` | `/queries/stream` | Versión del endpoint `/ask` que utiliza Server-Sent Events (SSE) para transmit\n\n## Base URL\n```\n/api/v1/apicol conocimiento\n```\n\n## Endpoints\n\n### GET /apicol conocimiento\nGet all apicol conocimiento records\n\n**Response:**\n```json\n[\n  {\n    \"id\": \"string\",\n    \"name\": \"string\",\n    \"description\": \"string\",\n    \"createdAt\": \"datetime\",\n    \"updatedAt\": \"datetime\"\n  }\n]\n```\n\n### GET /apicol conocimiento/{id}\nGet a specific apicol conocimiento record by ID\n\n**Parameters:**\n- `id` (string, required): The ID of the record\n\n**Response:**\n```json\n{\n  \"id\": \"string\",\n  \"name\": \"string\",\n  \"description\": \"string\",\n  \"createdAt\": \"datetime\",\n  \"updatedAt\": \"datetime\"\n}\n```\n\n### POST /apicol conocimiento\nCreate a new apicol conocimiento record\n\n**Request Body:**\n```json\n{\n  \"name\": \"string\",\n  \"description\": \"string\"\n}\n```\n\n**Response:**\n```json\n{\n  \"id\": \"string\",\n  \"name\": \"string\",\n  \"description\": \"string\",\n  \"createdAt\": \"datetime\",\n  \"updatedAt\": \"datetime\"\n}\n```\n\n### PUT /apicol conocimiento/{id}\nUpdate a apicol conocimiento record\n\n**Parameters:**\n- `id` (string, required): The ID of the record\n\n**Request Body:**\n```json\n{\n  \"name\": \"string\",\n  \"description\": \"string\"\n}\n```\n\n**Response:**\n```json\n{\n  \"id\": \"string\",\n  \"name\": \"string\",\n  \"description\": \"string\",\n  \"createdAt\": \"datetime\",\n  \"updatedAt\": \"datetime\"\n}\n```\n\n### DELETE /apicol conocimiento/{id}\nDelete a apicol conocimiento record\n\n**Parameters:**\n- `id` (string, required): The ID of the record\n\n**Response:**\n```json\n{\n  \"message\": \"Record deleted successfully\"\n}\n```\n\n## Data Model\n\n### ApiCol Conocimiento Schema\n```typescript\ninterface ApiColConocimiento {\n  id: string;\n  name: string;\n  description?: string;\n  createdAt: Date;\n  updatedAt: Date;\n}\n```\n\n## Error Responses\n\nAll endpoints may return the following error responses:\n\n**400 Bad Request**\n```json\n{\n  \"error\": \"Bad Request\",\n  \"message\": \"Invalid input data\"\n}\n```\n\n**404 Not Found**\n```json\n{\n  \"error\": \"Not Found\",\n  \"message\": \"Resource not found\"\n}\n```\n\n**500 Internal Server Error**\n```json\n{\n  \"error\": \"Internal Server Error\",\n  \"message\": \"An unexpected error occurred\"\n}\n```\n\n## Authentication\nThis API uses API key authentication. Include your API key in the request header:\n\n```\nAuthorization: Bearer YOUR_API_KEY\n```\n\n## Rate Limiting\n- 100 requests per minute per API key\n- 1000 requests per hour per API key\n\n## SDK Installation\n\n```bash\nnpm install apicol conocimiento-sdk\n```\n\n## SDK Usage\n\n```typescript\nimport { ApiColConocimientoAPI } from 'apicol conocimiento-sdk';\n\nconst api = new ApiColConocimientoAPI();\nconst records = await api.getAll();\n```",
+  "schemas": "// Zod Schemas for Validation\n\nimport { z } from 'zod';\n\n// Base schema\nexport const BaseSchema = z.object({\n  id: z.string().uuid(),\n  createdAt: z.date(),\n  updatedAt: z.date(),\n});\n\n// Create schema (for POST requests)\nexport const CreateSchema = z.object({\n  name: z.string().min(1, 'Name is required').max(100, 'Name too long'),\n  description: z.string().optional(),\n});\n\n// Update schema (for PUT requests)\nexport const UpdateSchema = z.object({\n  name: z.string().min(1, 'Name is required').max(100, 'Name too long').optional(),\n  description: z.string().optional(),\n});\n\n// Response schema\nexport const ResponseSchema = BaseSchema.merge(CreateSchema);\n\n// Query parameters schema\nexport const QuerySchema = z.object({\n  page: z.coerce.number().min(1).default(1),\n  limit: z.coerce.number().min(1).max(100).default(10),\n  search: z.string().optional(),\n  sortBy: z.enum(['name', 'createdAt', 'updatedAt']).default('createdAt'),\n  sortOrder: z.enum(['asc', 'desc']).default('desc'),\n});\n\n// Error response schema\nexport const ErrorSchema = z.object({\n  error: z.string(),\n  message: z.string(),\n  details: z.any().optional(),\n});\n\n// Types\nexport type CreateInput = z.infer<typeof CreateSchema>;\nexport type UpdateInput = z.infer<typeof UpdateSchema>;\nexport type QueryInput = z.infer<typeof QuerySchema>;\nexport type Response = z.infer<typeof ResponseSchema>;\nexport type ErrorResponse = z.infer<typeof ErrorSchema>;\n\n// Validation middleware example\nexport const validateCreate = (data: unknown) => {\n  return CreateSchema.parse(data);\n};\n\nexport const validateUpdate = (data: unknown) => {\n  return UpdateSchema.parse(data);\n};\n\nexport const validateQuery = (data: unknown) => {\n  return QuerySchema.parse(data);\n};",
+  "endpoints": [
+    {
+      "description": "Lista los proveedores de IA disponibles y configurados.",
+      "id": "list-providers",
+      "method": "GET",
+      "parameters": {},
+      "path": "/api/v1/providers",
+      "testTask": {
+        "endpointId": "list-providers",
+        "id": "test-list-providers",
+        "inputValues": {},
+        "method": "POST",
+        "path": "/api/generate-api/test/list-providers",
+        "title": "Test GET /api/v1/providers"
+      }
+    },
+    {
+      "description": "Registra un nuevo proveedor de IA.",
+      "id": "create-provider",
+      "method": "POST",
+      "parameters": {
+        "apiKey": {
+          "description": "API key del proveedor",
+          "required": true,
+          "type": "string"
+        },
+        "baseUrl": {
+          "description": "URL base del proveedor",
+          "required": true,
+          "type": "string"
+        },
+        "name": {
+          "description": "Nombre del proveedor",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "path": "/api/v1/providers",
+      "testTask": {
+        "endpointId": "create-provider",
+        "id": "test-create-provider",
+        "inputValues": {
+          "apiKey": "",
+          "baseUrl": "",
+          "name": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/create-provider",
+        "title": "Test POST /api/v1/providers"
+      }
+    },
+    {
+      "description": "Lista todas las instancias de modelos configurados.",
+      "id": "list-models",
+      "method": "GET",
+      "parameters": {},
+      "path": "/api/v1/models",
+      "testTask": {
+        "endpointId": "list-models",
+        "id": "test-list-models",
+        "inputValues": {},
+        "method": "POST",
+        "path": "/api/generate-api/test/list-models",
+        "title": "Test GET /api/v1/models"
+      }
+    },
+    {
+      "description": "Crea una nueva configuración de modelo.",
+      "id": "create-model",
+      "method": "POST",
+      "parameters": {
+        "maxTokens": {
+          "description": "Máximo de tokens",
+          "required": false,
+          "type": "integer"
+        },
+        "name": {
+          "description": "Nombre del modelo",
+          "required": true,
+          "type": "string"
+        },
+        "providerId": {
+          "description": "ID del proveedor",
+          "required": true,
+          "type": "string"
+        },
+        "temperature": {
+          "description": "Temperatura del modelo",
+          "required": false,
+          "type": "number"
+        }
+      },
+      "path": "/api/v1/models",
+      "testTask": {
+        "endpointId": "create-model",
+        "id": "test-create-model",
+        "inputValues": {
+          "maxTokens": "",
+          "name": "",
+          "providerId": "",
+          "temperature": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/create-model",
+        "title": "Test POST /api/v1/models"
+      }
+    },
+    {
+      "description": "Obtiene los detalles de un modelo específico.",
+      "id": "get-model",
+      "method": "GET",
+      "parameters": {
+        "modelId": {
+          "description": "ID del modelo",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "path": "/api/v1/models/{modelId}",
+      "testTask": {
+        "endpointId": "get-model",
+        "id": "test-get-model",
+        "inputValues": {
+          "modelId": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/get-model",
+        "title": "Test GET /api/v1/models/{modelId}"
+      }
+    },
+    {
+      "description": "Actualiza la configuración de un modelo.",
+      "id": "update-model",
+      "method": "PATCH",
+      "parameters": {
+        "maxTokens": {
+          "description": "Nuevo máximo de tokens",
+          "required": false,
+          "type": "integer"
+        },
+        "modelId": {
+          "description": "ID del modelo",
+          "required": true,
+          "type": "string"
+        },
+        "temperature": {
+          "description": "Nueva temperatura",
+          "required": false,
+          "type": "number"
+        }
+      },
+      "path": "/api/v1/models/{modelId}",
+      "testTask": {
+        "endpointId": "update-model",
+        "id": "test-update-model",
+        "inputValues": {
+          "maxTokens": "",
+          "modelId": "",
+          "temperature": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/update-model",
+        "title": "Test PATCH /api/v1/models/{modelId}"
+      }
+    },
+    {
+      "description": "Elimina una configuración de modelo.",
+      "id": "delete-model",
+      "method": "DELETE",
+      "parameters": {
+        "modelId": {
+          "description": "ID del modelo",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "path": "/api/v1/models/{modelId}",
+      "testTask": {
+        "endpointId": "delete-model",
+        "id": "test-delete-model",
+        "inputValues": {
+          "modelId": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/delete-model",
+        "title": "Test DELETE /api/v1/models/{modelId}"
+      }
+    },
+    {
+      "description": "Lista las categorías raíz con paginación.",
+      "id": "list-categories",
+      "method": "GET",
+      "parameters": {
+        "page": {
+          "description": "Número de página",
+          "required": false,
+          "type": "integer"
+        },
+        "perPage": {
+          "description": "Elementos por página",
+          "required": false,
+          "type": "integer"
+        }
+      },
+      "path": "/api/v1/categories",
+      "testTask": {
+        "endpointId": "list-categories",
+        "id": "test-list-categories",
+        "inputValues": {
+          "page": "",
+          "perPage": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/list-categories",
+        "title": "Test GET /api/v1/categories"
+      }
+    },
+    {
+      "description": "Obtiene una categoría y sus hijos directos.",
+      "id": "get-category",
+      "method": "GET",
+      "parameters": {
+        "categoryId": {
+          "description": "ID de la categoría",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "path": "/api/v1/categories/{categoryId}",
+      "testTask": {
+        "endpointId": "get-category",
+        "id": "test-get-category",
+        "inputValues": {
+          "categoryId": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/get-category",
+        "title": "Test GET /api/v1/categories/{categoryId}"
+      }
+    },
+    {
+      "description": "Crea una nueva categoría.",
+      "id": "create-category",
+      "method": "POST",
+      "parameters": {
+        "description": {
+          "description": "Descripción de la categoría",
+          "required": false,
+          "type": "string"
+        },
+        "name": {
+          "description": "Nombre de la categoría",
+          "required": true,
+          "type": "string"
+        },
+        "parentId": {
+          "description": "ID del padre (opcional)",
+          "required": false,
+          "type": "string"
+        }
+      },
+      "path": "/api/v1/categories",
+      "testTask": {
+        "endpointId": "create-category",
+        "id": "test-create-category",
+        "inputValues": {
+          "description": "",
+          "name": "",
+          "parentId": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/create-category",
+        "title": "Test POST /api/v1/categories"
+      }
+    },
+    {
+      "description": "Actualiza una categoría.",
+      "id": "update-category",
+      "method": "PATCH",
+      "parameters": {
+        "categoryId": {
+          "description": "ID de la categoría",
+          "required": true,
+          "type": "string"
+        },
+        "description": {
+          "description": "Nueva descripción",
+          "required": false,
+          "type": "string"
+        },
+        "name": {
+          "description": "Nuevo nombre",
+          "required": false,
+          "type": "string"
+        }
+      },
+      "path": "/api/v1/categories/{categoryId}",
+      "testTask": {
+        "endpointId": "update-category",
+        "id": "test-update-category",
+        "inputValues": {
+          "categoryId": "",
+          "description": "",
+          "name": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/update-category",
+        "title": "Test PATCH /api/v1/categories/{categoryId}"
+      }
+    },
+    {
+      "description": "Elimina una categoría y su subárbol.",
+      "id": "delete-category",
+      "method": "DELETE",
+      "parameters": {
+        "categoryId": {
+          "description": "ID de la categoría",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "path": "/api/v1/categories/{categoryId}",
+      "testTask": {
+        "endpointId": "delete-category",
+        "id": "test-delete-category",
+        "inputValues": {
+          "categoryId": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/delete-category",
+        "title": "Test DELETE /api/v1/categories/{categoryId}"
+      }
+    },
+    {
+      "description": "Mueve una categoría a un nuevo padre.",
+      "id": "move-category",
+      "method": "POST",
+      "parameters": {
+        "categoryId": {
+          "description": "ID de la categoría a mover",
+          "required": true,
+          "type": "string"
+        },
+        "newParentId": {
+          "description": "ID del nuevo padre",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "path": "/api/v1/categories/{categoryId}/move",
+      "testTask": {
+        "endpointId": "move-category",
+        "id": "test-move-category",
+        "inputValues": {
+          "categoryId": "",
+          "newParentId": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/move-category",
+        "title": "Test POST /api/v1/categories/{categoryId}/move"
+      }
+    },
+    {
+      "description": "Lista documentos dentro de una categoría.",
+      "id": "list-documents",
+      "method": "GET",
+      "parameters": {
+        "categoryId": {
+          "description": "ID de la categoría",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "path": "/api/v1/categories/{categoryId}/documents",
+      "testTask": {
+        "endpointId": "list-documents",
+        "id": "test-list-documents",
+        "inputValues": {
+          "categoryId": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/list-documents",
+        "title": "Test GET /api/v1/categories/{categoryId}/documents"
+      }
+    },
+    {
+      "description": "Sube un documento a una categoría.",
+      "id": "upload-document",
+      "method": "POST",
+      "parameters": {
+        "categoryId": {
+          "description": "ID de la categoría",
+          "required": true,
+          "type": "string"
+        },
+        "file": {
+          "description": "Archivo a subir (multipart/form-data)",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "path": "/api/v1/categories/{categoryId}/documents",
+      "testTask": {
+        "endpointId": "upload-document",
+        "id": "test-upload-document",
+        "inputValues": {
+          "categoryId": "",
+          "file": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/upload-document",
+        "title": "Test POST /api/v1/categories/{categoryId}/documents"
+      }
+    },
+    {
+      "description": "Obtiene metadatos y contenido de un documento.",
+      "id": "get-document",
+      "method": "GET",
+      "parameters": {
+        "documentId": {
+          "description": "ID del documento",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "path": "/api/v1/documents/{documentId}",
+      "testTask": {
+        "endpointId": "get-document",
+        "id": "test-get-document",
+        "inputValues": {
+          "documentId": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/get-document",
+        "title": "Test GET /api/v1/documents/{documentId}"
+      }
+    },
+    {
+      "description": "Elimina un documento y sus fragmentos.",
+      "id": "delete-document",
+      "method": "DELETE",
+      "parameters": {
+        "documentId": {
+          "description": "ID del documento",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "path": "/api/v1/documents/{documentId}",
+      "testTask": {
+        "endpointId": "delete-document",
+        "id": "test-delete-document",
+        "inputValues": {
+          "documentId": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/delete-document",
+        "title": "Test DELETE /api/v1/documents/{documentId}"
+      }
+    },
+    {
+      "description": "Fuerza el re-vectorizado de un documento.",
+      "id": "reprocess-document",
+      "method": "POST",
+      "parameters": {
+        "documentId": {
+          "description": "ID del documento",
+          "required": true,
+          "type": "string"
+        }
+      },
+      "path": "/api/v1/documents/{documentId}/reprocess",
+      "testTask": {
+        "endpointId": "reprocess-document",
+        "id": "test-reprocess-document",
+        "inputValues": {
+          "documentId": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/reprocess-document",
+        "title": "Test POST /api/v1/documents/{documentId}/reprocess"
+      }
+    },
+    {
+      "description": "Realiza una pregunta RAG.",
+      "id": "ask-query",
+      "method": "POST",
+      "parameters": {
+        "categoryId": {
+          "description": "ID de categoría para restringir búsqueda",
+          "required": false,
+          "type": "string"
+        },
+        "modelId": {
+          "description": "ID del modelo a usar",
+          "required": true,
+          "type": "string"
+        },
+        "question": {
+          "description": "Pregunta en lenguaje natural",
+          "required": true,
+          "type": "string"
+        },
+        "topK": {
+          "description": "Número de fragmentos a recuperar",
+          "required": false,
+          "type": "integer"
+        }
+      },
+      "path": "/api/v1/queries/ask",
+      "testTask": {
+        "endpointId": "ask-query",
+        "id": "test-ask-query",
+        "inputValues": {
+          "categoryId": "",
+          "modelId": "",
+          "question": "",
+          "topK": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/ask-query",
+        "title": "Test POST /api/v1/queries/ask"
+      }
+    },
+    {
+      "description": "Versión streaming de la consulta RAG.",
+      "id": "stream-query",
+      "method": "POST",
+      "parameters": {
+        "categoryId": {
+          "description": "ID de categoría para restringir búsqueda",
+          "required": false,
+          "type": "string"
+        },
+        "modelId": {
+          "description": "ID del modelo a usar",
+          "required": true,
+          "type": "string"
+        },
+        "question": {
+          "description": "Pregunta en lenguaje natural",
+          "required": true,
+          "type": "string"
+        },
+        "topK": {
+          "description": "Número de fragmentos a recuperar",
+          "required": false,
+          "type": "integer"
+        }
+      },
+      "path": "/api/v1/queries/stream",
+      "testTask": {
+        "endpointId": "stream-query",
+        "id": "test-stream-query",
+        "inputValues": {
+          "categoryId": "",
+          "modelId": "",
+          "question": "",
+          "topK": ""
+        },
+        "method": "POST",
+        "path": "/api/generate-api/test/stream-query",
+        "title": "Test POST /api/v1/queries/stream"
+      }
+    }
+  ],
+  "created": "2026-05-13T22:36:36.593Z"
+}

@@ -1,0 +1,23 @@
+{
+  "name": "zeus-terminal-server-bundle",
+  "private": true,
+  "version": "1.0.0",
+  "description": "WebSocket + node-pty para Zeus IA (solo dependencias de producción)",
+  "scripts": {
+    "compile": "node dist/terminal-server.js",
+    "compile-terminal-server": "npm run compile"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^4.22.1",
+    "node-pty": "^1.1.0",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.5",
+    "@types/ws": "^8.5.10",
+    "typescript": "^5.6.3"
+  }
+}

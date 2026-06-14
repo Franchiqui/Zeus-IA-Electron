@@ -1,0 +1,642 @@
+[
+  {
+    "description": "Lista los proveedores de IA disponibles y configurados.",
+    "id": "list-providers",
+    "method": "GET",
+    "parameters": {},
+    "path": "/api/v1/providers",
+    "testTask": {
+      "endpointId": "list-providers",
+      "id": "test-list-providers",
+      "inputValues": {},
+      "method": "POST",
+      "path": "/api/generate-api/test/list-providers",
+      "title": "Test GET /api/v1/providers"
+    }
+  },
+  {
+    "description": "Registra un nuevo proveedor de IA.",
+    "id": "create-provider",
+    "method": "POST",
+    "parameters": {
+      "apiKey": {
+        "description": "API key del proveedor",
+        "required": true,
+        "type": "string"
+      },
+      "baseUrl": {
+        "description": "URL base del proveedor",
+        "required": true,
+        "type": "string"
+      },
+      "name": {
+        "description": "Nombre del proveedor",
+        "required": true,
+        "type": "string"
+      }
+    },
+    "path": "/api/v1/providers",
+    "testTask": {
+      "endpointId": "create-provider",
+      "id": "test-create-provider",
+      "inputValues": {
+        "apiKey": "",
+        "baseUrl": "",
+        "name": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/create-provider",
+      "title": "Test POST /api/v1/providers"
+    }
+  },
+  {
+    "description": "Lista todas las instancias de modelos configurados.",
+    "id": "list-models",
+    "method": "GET",
+    "parameters": {},
+    "path": "/api/v1/models",
+    "testTask": {
+      "endpointId": "list-models",
+      "id": "test-list-models",
+      "inputValues": {},
+      "method": "POST",
+      "path": "/api/generate-api/test/list-models",
+      "title": "Test GET /api/v1/models"
+    }
+  },
+  {
+    "description": "Crea una nueva configuración de modelo.",
+    "id": "create-model",
+    "method": "POST",
+    "parameters": {
+      "maxTokens": {
+        "description": "Máximo de tokens",
+        "required": false,
+        "type": "integer"
+      },
+      "name": {
+        "description": "Nombre del modelo",
+        "required": true,
+        "type": "string"
+      },
+      "providerId": {
+        "description": "ID del proveedor",
+        "required": true,
+        "type": "string"
+      },
+      "temperature": {
+        "description": "Temperatura del modelo",
+        "required": false,
+        "type": "number"
+      }
+    },
+    "path": "/api/v1/models",
+    "testTask": {
+      "endpointId": "create-model",
+      "id": "test-create-model",
+      "inputValues": {
+        "maxTokens": "",
+        "name": "",
+        "providerId": "",
+        "temperature": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/create-model",
+      "title": "Test POST /api/v1/models"
+    }
+  },
+  {
+    "description": "Obtiene los detalles de un modelo específico.",
+    "id": "get-model",
+    "method": "GET",
+    "parameters": {
+      "modelId": {
+        "description": "ID del modelo",
+        "required": true,
+        "type": "string"
+      }
+    },
+    "path": "/api/v1/models/{modelId}",
+    "testTask": {
+      "endpointId": "get-model",
+      "id": "test-get-model",
+      "inputValues": {
+        "modelId": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/get-model",
+      "title": "Test GET /api/v1/models/{modelId}"
+    }
+  },
+  {
+    "description": "Actualiza la configuración de un modelo.",
+    "id": "update-model",
+    "method": "PATCH",
+    "parameters": {
+      "maxTokens": {
+        "description": "Nuevo máximo de tokens",
+        "required": false,
+        "type": "integer"
+      },
+      "modelId": {
+        "description": "ID del modelo",
+        "required": true,
+        "type": "string"
+      },
+      "temperature": {
+        "description": "Nueva temperatura",
+        "required": false,
+        "type": "number"
+      }
+    },
+    "path": "/api/v1/models/{modelId}",
+    "testTask": {
+      "endpointId": "update-model",
+      "id": "test-update-model",
+      "inputValues": {
+        "maxTokens": "",
+        "modelId": "",
+        "temperature": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/update-model",
+      "title": "Test PATCH /api/v1/models/{modelId}"
+    }
+  },
+  {
+    "description": "Elimina una configuración de modelo.",
+    "id": "delete-model",
+    "method": "DELETE",
+    "parameters": {
+      "modelId": {
+        "description": "ID del modelo",
+        "required": true,
+        "type": "string"
+      }
+    },
+    "path": "/api/v1/models/{modelId}",
+    "testTask": {
+      "endpointId": "delete-model",
+      "id": "test-delete-model",
+      "inputValues": {
+        "modelId": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/delete-model",
+      "title": "Test DELETE /api/v1/models/{modelId}"
+    }
+  },
+  {
+    "description": "Lista las categorías raíz con paginación.",
+    "id": "list-categories",
+    "method": "GET",
+    "parameters": {
+      "page": {
+        "description": "Número de página",
+        "required": false,
+        "type": "integer"
+      },
+      "perPage": {
+        "description": "Elementos por página",
+        "required": false,
+        "type": "integer"
+      }
+    },
+    "path": "/api/v1/categories",
+    "testTask": {
+      "endpointId": "list-categories",
+      "id": "test-list-categories",
+      "inputValues": {
+        "page": "",
+        "perPage": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/list-categories",
+      "title": "Test GET /api/v1/categories"
+    }
+  },
+  {
+    "description": "Obtiene una categoría y sus hijos directos.",
+    "id": "get-category",
+    "method": "GET",
+    "parameters": {
+      "categoryId": {
+        "description": "ID de la categoría",
+        "required": true,
+        "type": "string"
+      }
+    },
+    "path": "/api/v1/categories/{categoryId}",
+    "testTask": {
+      "endpointId": "get-category",
+      "id": "test-get-category",
+      "inputValues": {
+        "categoryId": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/get-category",
+      "title": "Test GET /api/v1/categories/{categoryId}"
+    }
+  },
+  {
+    "description": "Crea una nueva categoría.",
+    "id": "create-category",
+    "method": "POST",
+    "parameters": {
+      "description": {
+        "description": "Descripción de la categoría",
+        "required": false,
+        "type": "string"
+      },
+      "name": {
+        "description": "Nombre de la categoría",
+        "required": true,
+        "type": "string"
+      },
+      "parentId": {
+        "description": "ID del padre (opcional)",
+        "required": false,
+        "type": "string"
+      }
+    },
+    "path": "/api/v1/categories",
+    "testTask": {
+      "endpointId": "create-category",
+      "id": "test-create-category",
+      "inputValues": {
+        "description": "",
+        "name": "",
+        "parentId": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/create-category",
+      "title": "Test POST /api/v1/categories"
+    }
+  },
+  {
+    "description": "Actualiza una categoría.",
+    "id": "update-category",
+    "method": "PATCH",
+    "parameters": {
+      "categoryId": {
+        "description": "ID de la categoría",
+        "required": true,
+        "type": "string"
+      },
+      "description": {
+        "description": "Nueva descripción",
+        "required": false,
+        "type": "string"
+      },
+      "name": {
+        "description": "Nuevo nombre",
+        "required": false,
+        "type": "string"
+      }
+    },
+    "path": "/api/v1/categories/{categoryId}",
+    "testTask": {
+      "endpointId": "update-category",
+      "id": "test-update-category",
+      "inputValues": {
+        "categoryId": "",
+        "description": "",
+        "name": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/update-category",
+      "title": "Test PATCH /api/v1/categories/{categoryId}"
+    }
+  },
+  {
+    "description": "Elimina una categoría y su subárbol.",
+    "id": "delete-category",
+    "method": "DELETE",
+    "parameters": {
+      "categoryId": {
+        "description": "ID de la categoría",
+        "required": true,
+        "type": "string"
+      }
+    },
+    "path": "/api/v1/categories/{categoryId}",
+    "testTask": {
+      "endpointId": "delete-category",
+      "id": "test-delete-category",
+      "inputValues": {
+        "categoryId": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/delete-category",
+      "title": "Test DELETE /api/v1/categories/{categoryId}"
+    }
+  },
+  {
+    "description": "Mueve una categoría a un nuevo padre.",
+    "id": "move-category",
+    "method": "POST",
+    "parameters": {
+      "categoryId": {
+        "description": "ID de la categoría a mover",
+        "required": true,
+        "type": "string"
+      },
+      "newParentId": {
+        "description": "ID del nuevo padre",
+        "required": true,
+        "type": "string"
+      }
+    },
+    "path": "/api/v1/categories/{categoryId}/move",
+    "testTask": {
+      "endpointId": "move-category",
+      "id": "test-move-category",
+      "inputValues": {
+        "categoryId": "",
+        "newParentId": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/move-category",
+      "title": "Test POST /api/v1/categories/{categoryId}/move"
+    }
+  },
+  {
+    "description": "Lista documentos dentro de una categoría.",
+    "id": "list-documents",
+    "method": "GET",
+    "parameters": {
+      "categoryId": {
+        "description": "ID de la categoría",
+        "required": true,
+        "type": "string"
+      }
+    },
+    "path": "/api/v1/categories/{categoryId}/documents",
+    "testTask": {
+      "endpointId": "list-documents",
+      "id": "test-list-documents",
+      "inputValues": {
+        "categoryId": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/list-documents",
+      "title": "Test GET /api/v1/categories/{categoryId}/documents"
+    }
+  },
+  {
+    "description": "Sube un documento a una categoría.",
+    "id": "upload-document",
+    "method": "POST",
+    "parameters": {
+      "categoryId": {
+        "description": "ID de la categoría",
+        "required": true,
+        "type": "string"
+      },
+      "description": {
+        "description": "Descripción del documento",
+        "required": false,
+        "type": "string"
+      },
+      "file": {
+        "description": "Archivo a subir (multipart/form-data)",
+        "required": true,
+        "type": "file"
+      },
+      "title": {
+        "description": "Título del documento",
+        "required": false,
+        "type": "string"
+      }
+    },
+    "path": "/api/v1/categories/{categoryId}/documents",
+    "testTask": {
+      "endpointId": "upload-document",
+      "id": "test-upload-document",
+      "inputValues": {
+        "categoryId": "",
+        "description": "",
+        "file": "",
+        "title": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/upload-document",
+      "title": "Test POST /api/v1/categories/{categoryId}/documents"
+    }
+  },
+  {
+    "description": "Obtiene metadatos y contenido de un documento.",
+    "id": "get-document",
+    "method": "GET",
+    "parameters": {
+      "documentId": {
+        "description": "ID del documento",
+        "required": true,
+        "type": "string"
+      }
+    },
+    "path": "/api/v1/documents/{documentId}",
+    "testTask": {
+      "endpointId": "get-document",
+      "id": "test-get-document",
+      "inputValues": {
+        "documentId": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/get-document",
+      "title": "Test GET /api/v1/documents/{documentId}"
+    }
+  },
+  {
+    "description": "Elimina un documento y sus fragmentos.",
+    "id": "delete-document",
+    "method": "DELETE",
+    "parameters": {
+      "documentId": {
+        "description": "ID del documento",
+        "required": true,
+        "type": "string"
+      }
+    },
+    "path": "/api/v1/documents/{documentId}",
+    "testTask": {
+      "endpointId": "delete-document",
+      "id": "test-delete-document",
+      "inputValues": {
+        "documentId": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/delete-document",
+      "title": "Test DELETE /api/v1/documents/{documentId}"
+    }
+  },
+  {
+    "description": "Fuerza el re-vectorizado de un documento.",
+    "id": "reprocess-document",
+    "method": "POST",
+    "parameters": {
+      "documentId": {
+        "description": "ID del documento",
+        "required": true,
+        "type": "string"
+      }
+    },
+    "path": "/api/v1/documents/{documentId}/reprocess",
+    "testTask": {
+      "endpointId": "reprocess-document",
+      "id": "test-reprocess-document",
+      "inputValues": {
+        "documentId": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/reprocess-document",
+      "title": "Test POST /api/v1/documents/{documentId}/reprocess"
+    }
+  },
+  {
+    "description": "Genera chunks y embeddings para un documento.",
+    "id": "generate-chunks",
+    "method": "POST",
+    "parameters": {
+      "documentId": {
+        "description": "ID del documento",
+        "required": true,
+        "type": "string"
+      },
+      "text": {
+        "description": "Texto a fragmentar (opcional, usa doc.content si no se envía)",
+        "required": false,
+        "type": "string"
+      }
+    },
+    "path": "/api/v1/documents/{documentId}/chunks",
+    "testTask": {
+      "endpointId": "generate-chunks",
+      "id": "test-generate-chunks",
+      "inputValues": {
+        "documentId": "",
+        "text": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/generate-chunks",
+      "title": "Test POST /api/v1/documents/{documentId}/chunks"
+    }
+  },
+  {
+    "description": "Busca chunks relevantes por similitud semántica.",
+    "id": "search-chunks",
+    "method": "POST",
+    "parameters": {
+      "categoryId": {
+        "description": "ID de categoría para filtrar",
+        "required": false,
+        "type": "string"
+      },
+      "question": {
+        "description": "Pregunta o texto de consulta",
+        "required": true,
+        "type": "string"
+      },
+      "topK": {
+        "description": "Número de resultados a devolver",
+        "required": false,
+        "type": "integer"
+      }
+    },
+    "path": "/api/v1/queries/search",
+    "testTask": {
+      "endpointId": "search-chunks",
+      "id": "test-search-chunks",
+      "inputValues": {
+        "categoryId": "",
+        "question": "",
+        "topK": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/search-chunks",
+      "title": "Test POST /api/v1/queries/search"
+    }
+  },
+  {
+    "description": "Realiza una pregunta RAG.",
+    "id": "ask-query",
+    "method": "POST",
+    "parameters": {
+      "categoryId": {
+        "description": "ID de categoría para restringir búsqueda",
+        "required": false,
+        "type": "string"
+      },
+      "modelId": {
+        "description": "ID del modelo a usar",
+        "required": true,
+        "type": "string"
+      },
+      "question": {
+        "description": "Pregunta en lenguaje natural",
+        "required": true,
+        "type": "string"
+      },
+      "topK": {
+        "description": "Número de fragmentos a recuperar",
+        "required": false,
+        "type": "integer"
+      }
+    },
+    "path": "/api/v1/queries/ask",
+    "testTask": {
+      "endpointId": "ask-query",
+      "id": "test-ask-query",
+      "inputValues": {
+        "categoryId": "",
+        "modelId": "",
+        "question": "",
+        "topK": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/ask-query",
+      "title": "Test POST /api/v1/queries/ask"
+    }
+  },
+  {
+    "description": "Versión streaming de la consulta RAG.",
+    "id": "stream-query",
+    "method": "POST",
+    "parameters": {
+      "categoryId": {
+        "description": "ID de categoría para restringir búsqueda",
+        "required": false,
+        "type": "string"
+      },
+      "modelId": {
+        "description": "ID del modelo a usar",
+        "required": true,
+        "type": "string"
+      },
+      "question": {
+        "description": "Pregunta en lenguaje natural",
+        "required": true,
+        "type": "string"
+      },
+      "topK": {
+        "description": "Número de fragmentos a recuperar",
+        "required": false,
+        "type": "integer"
+      }
+    },
+    "path": "/api/v1/queries/stream",
+    "testTask": {
+      "endpointId": "stream-query",
+      "id": "test-stream-query",
+      "inputValues": {
+        "categoryId": "",
+        "modelId": "",
+        "question": "",
+        "topK": ""
+      },
+      "method": "POST",
+      "path": "/api/generate-api/test/stream-query",
+      "title": "Test POST /api/v1/queries/stream"
+    }
+  }
+]

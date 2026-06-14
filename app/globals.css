@@ -1,0 +1,168 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Tema oscuro de Zeus como default — la app no tiene modo claro */
+  :root {
+    --background: 0 0% 5.5%;         /* #0e0e0e  surface */
+    --foreground: 0 0% 100%;         /* #ffffff  onSurface */
+
+    --muted: 60 1% 12%;              /* #20201f  surfaceContainerHigh */
+    --muted-foreground: 0 2% 67%;    /* #adaaaa  onSurfaceVariant */
+
+    --popover: 0 0% 7%;              /* #131313  surfaceContainerLow */
+    --popover-foreground: 0 0% 100%;
+
+    --border: 60 1% 28%;             /* #484847  outline */
+    --input: 0 0% 15%;               /* #262626  surfaceContainerHighest */
+
+    --card: 0 0% 10%;                /* #1a1a1a  surfaceContainer */
+    --card-foreground: 0 0% 100%;
+
+    --primary: 217 91% 60%;          /* #3b82f6  primary */
+    --primary-foreground: 0 0% 100%; /* #ffffff  onPrimary */
+
+    --secondary: 186 98% 50%;       /* #00e3fd  secondary */
+    --secondary-foreground: 188 100% 17%; /* #004d57  onSecondary */
+
+    --accent: 252 95% 85%;           /* #c4b5fd  tertiary */
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 63% 31%;        /* ~rojo oscuro */
+    --destructive-foreground: 0 0% 100%;
+
+    --ring: 60 1% 28%;               /* #484847  outline */
+
+    --radius: 0.5rem;
+
+    /* Extra tokens que usa Tailwind v4 / @theme */
+    --chart-1: 217 91% 60%;          /* info     #60a5fa */
+    --chart-2: 142 71% 45%;          /* success  #4ade80 */
+    --chart-3: 48 96% 53%;           /* warning  #facc15 */
+    --chart-4: 0 84% 60%;            /* error    ~#ef4444 */
+    --chart-5: 252 95% 85%;          /* accent   #c4b5fd */
+
+    --tab-icon: 0 0% 100%;
+  }
+
+  .dark {
+    --background: 0 0% 5.5%;
+    --foreground: 0 0% 100%;
+
+    --muted: 60 1% 12%;
+    --muted-foreground: 0 2% 67%;
+
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 100%;
+
+    --border: 60 1% 28%;
+    --input: 0 0% 15%;
+
+    --card: 0 0% 10%;
+    --card-foreground: 0 0% 100%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 186 98% 50%;
+    --secondary-foreground: 188 100% 17%;
+
+    --accent: 252 95% 85%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 100%;
+
+    --ring: 60 1% 28%;
+
+    --radius: 0.5rem;
+
+    --chart-1: 217 91% 60%;
+    --chart-2: 142 71% 45%;
+    --chart-3: 48 96% 53%;
+    --chart-4: 0 84% 60%;
+    --chart-5: 252 95% 85%;
+
+    --tab-icon: 0 0% 100%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Global Scrollbar Styles */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent !important;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #4B5563;
+    border-radius: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #6B7280;
+  }
+
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #4B5563 transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #4B5563;
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #6B7280;
+  }
+
+  /* Monaco Editor Correction Highlights */
+  .bg-green-500\/10 {
+    background-color: rgba(34, 197, 94, 0.1) !important;
+  }
+
+  .border-l-4 {
+    border-left-width: 4px !important;
+  }
+
+  .border-green-500 {
+    border-color: rgb(34, 197, 94) !important;
+  }
+
+  .bg-green-500\/20 {
+    background-color: rgba(34, 197, 94, 0.2) !important;
+  }
+
+  /* Electron Utilities */
+  .electron-drag { -webkit-app-region: drag; }
+  .electron-no-drag { -webkit-app-region: no-drag; }
+}

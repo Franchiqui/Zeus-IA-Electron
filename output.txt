@@ -1,0 +1,170 @@
+﻿72|JSX text|Hello World
+150|JSX text|Promise
+152|JSX text|Record
+154|JSX text|Promise
+155|JSX text|Promise
+156|JSX text|Promise
+157|JSX text|Promise
+225|JSX text|)/, '$1\n
+587|setError|No se pudo mejorar la descripción. Por favor, inténtalo de nuevo.
+598|JSX text|Promise
+793|JSX text|Promise
+929|JSX text|): Promise
+1959|JSX text|, appName: string, template: string): Promise
+2481|JSX text|API Dashboard
+2487|JSX text|Método
+2488|JSX text|Path
+2489|JSX text|Descripción
+2490|JSX text|Acción
+2567|setError|Error: Datos del primer paso incompletos. Por favor, completa todos los campos requeridos.
+4259|setError|Credenciales inválidas
+4267|JSX text|Iniciar sesión
+4283|placeholder|tu@email.com
+4297|placeholder|••••••••
+4351|setError|Las contraseñas no coinciden
+4366|setError|No se pudo registrar. El email puede estar en uso.
+4374|JSX text|Crear cuenta
+4390|placeholder|tu@email.com
+4404|placeholder|••••••••
+4418|placeholder|••••••••
+4471|JSX text|Bienvenido
+4472|JSX text|Cargando aplicación...
+4474|JSX text|inicia sesión
+4474|JSX text|o
+4474|JSX text|regístrate
+4761|JSX text|Perfil
+4767|JSX text|Configuración
+4773|JSX text|Cerrar sesión
+4853|JSX text|Cargar Archivo
+4859|JSX text|Cuerpo JSON
+4871|placeholder|{}
+4884|placeholder|${v.description ||
+4969|JSX text|API Dashboard
+4975|JSX text|Método
+4976|JSX text|Path
+4977|JSX text|Descripción
+4978|JSX text|Acción
+5432|setError|Error: No se puede proceder al segundo paso sin una estructura válida del primer paso.
+7136|setError|El archivo ${file.name} es demasiado grande. Máximo 10MB.
+7151|setError|${file.name} no es una imagen válida.
+7156|setError|La imagen ${file.name} es demasiado grande. Máximo 5MB.
+7312|JSX text|Generar Aplicación - Configuración
+7316|JSX text|Nombre de la aplicación
+7320|placeholder|mi-aplicacion
+7324|JSX text|Plantilla
+7337|JSX text|App Web
+7338|JSX text|Aplicación completa con SSR
+7353|JSX text|App Móvil
+7354|JSX text|Optimizada para móviles
+7382|JSX text|Página Web
+7383|JSX text|Landing o sitio estático
+7398|JSX text|App Desktop
+7399|JSX text|Escritorio con Electron
+7409|JSX text|Características
+7457|JSX text|Sistema operativo preferido
+7462|JSX text|Detectar automáticamente / Mostrar ambos
+7463|JSX text|Windows
+7464|JSX text|macOS
+7465|JSX text|Linux
+7467|JSX text|Esto ordenará las instrucciones del README y te mostrará primero el instalador adecuado. Siempre incluimos ambos instaladores.
+7472|JSX text|Descripción
+7483|placeholder|Describe tu aplicación...
+7489|JSX text|Páginas Personalizadas
+7497|title|Agregar página
+7517|placeholder|Nombre de la página (ej: contacto)
+7528|placeholder|Contenido / descripción
+7538|title|Eliminar página
+7549|JSX text|Recursos Adicionales
+7557|JSX text|Archivos
+7585|JSX text|Imágenes
+7610|JSX text|Seleccione las imágenes que desea incluir en su sitio web o aplicación.
+7611|JSX text|Buscando…
+7619|placeholder|Buscar por categoría o palabra clave
+7630|placeholder|Cantidad
+7631|title|Cantidad de imágenes
+7638|JSX text|No hay sugerencias por ahora. Escribe una descripción más específica.
+7684|JSX text|Imagen Seleccionada
+7716|JSX text|Total de recursos:
+7790|setError|Por favor, ingresa el nombre de la aplicación
+7794|setError|Por favor, selecciona una plantilla
+7798|setError|Por favor, proporciona una descripción de tu aplicación
+7802|setError|Por favor, selecciona un modelo de IA desde el selector en la parte superior
+7821|DialogTitle|Desplegar base de datos
+7821|JSX text|Desplegar base de datos
+7823|JSX text|Completa los datos para desplegar PocketBase en Fly.io. Usa un nombre de app único.
+7834|JSX text|Fly API Token
+7838|placeholder|Token de Fly.io
+7840|JSX text|token de organización
+7841|JSX text|fly.io
+7841|JSX text|o con CLI:
+7841|JSX text|fly tokens create
+7846|JSX text|Correo del administrador (PocketBase)
+7850|placeholder|email@ejemplo.com
+7851|JSX text|Si no existe un administrador, se creará automáticamente con este correo.
+7855|JSX text|Contraseña del administrador (PocketBase)
+7859|placeholder|Mínimo 8 caracteres
+7860|JSX text|Se usará para crear/autenticar el administrador y aplicar el esquema.
+7864|JSX text|Nombre de la App
+7868|placeholder|mi-app-pocketbase
+7873|JSX text|Región
+7878|JSX text|Selecciona una región
+7879|JSX text|Madrid (mad)
+7880|JSX text|París (cdg)
+7881|JSX text|Londres (lhr)
+7882|JSX text|Amsterdam (ams)
+7883|JSX text|Frankfurt (fra)
+7884|JSX text|Sydney (syd)
+7885|JSX text|Virginia (iad)
+7886|JSX text|Chicago (ord)
+7887|JSX text|Los Angeles (lax)
+7894|JSX text|Organization ID
+7898|placeholder|personal
+7899|JSX text|Usa "personal" si es tu organización personal.
+7903|JSX text|Versión de PocketBase
+7907|placeholder|Ej: 0.22.8
+7911|JSX text|Memoria (MB)
+7916|JSX text|A partir de 512 MB puede tener costo en Fly.io.
+7924|JSX text|Habilitar SSL
+7931|JSX text|Cancelar
+7943|JSX text|URL:
+7945|JSX text|Admin:
+7951|JSX text|• comprobando…
+7955|JSX text|• El Admin muestre
+7955|JSX text|Estado: Listo
+7956|JSX text|• Y aparezca al menos
+7956|JSX text|1 IP pública
+7959|title|Abrir panel de administración
+7962|title|Actualiza estado del Admin e IPs
+7980|JSX text|Consejo: Fly hace proxy 80/443 → 8090 automáticamente.
+7989|JSX text|IPs públicas asignadas
+7999|JSX text|Cerrar
+8010|JSX text|Estructura del Proyecto Generada
+8011|JSX text|Revisa la estructura y procede a generar el contenido
+8024|JSX text|Archivos
+8035|JSX text|Directorios
+8046|JSX text|Configuración
+8077|JSX text|Generar Contenido
+8091|JSX text|Progreso General
+8114|JSX text|Generando Contenido
+8115|JSX text|Creando los archivos de tu aplicación
+8122|JSX text|Completados
+8126|JSX text|Pendientes
+8130|JSX text|Errores
+8142|JSX text|Progreso de Archivos
+8204|JSX text|Terminal
+8211|JSX text|Aquí aparecerán los logs mientras se generan/guardan archivos.
+8231|alt|Logo
+8233|JSX text|¡Aplicación Generada!
+8243|JSX text|Estamos terminando...
+8244|JSX text|Aplicando correcciones automáticas y optimizando el proyecto. Por favor espera un momento antes de ir al editor.
+8274|JSX text|Generar Componentes
+8280|JSX text|Corregir archivo
+8286|JSX text|Validar Componentes
+8292|JSX text|Archivos Generados
+8309|JSX text|Selecciona el archivo a corregir
+8316|JSX text|Selecciona el archivo que quieres corregir
+8345|JSX text|Vista Previa del Código
+8349|JSX text|Vista previa disponible
+8353|JSX text|La vista previa aparecerá aquí cuando esté disponible
+8373|JSX text|Terminal
+8380|JSX text|Aquí aparecerán los logs mientras se generan/guardan archivos.

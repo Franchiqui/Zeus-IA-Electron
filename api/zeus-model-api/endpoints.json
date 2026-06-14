@@ -1,0 +1,507 @@
+[
+  {
+    "id": "get-workspace-tree",
+    "path": "/api/v1/workspaces/{workspaceId}/tree",
+    "method": "GET",
+    "description": "Obtiene el árbol de directorios del workspace",
+    "parameters": {
+      "workspaceId": {
+        "type": "string",
+        "required": true,
+        "description": "ID del workspace"
+      },
+      "depth": {
+        "type": "integer",
+        "required": false,
+        "description": "Profundidad máxima"
+      },
+      "extension": {
+        "type": "string",
+        "required": false,
+        "description": "Filtro por extensión (ej: .ts)"
+      }
+    },
+    "testTask": {
+      "id": "test-get-workspace-tree",
+      "endpointId": "get-workspace-tree",
+      "method": "POST",
+      "path": "/api/generate-api/test/get-workspace-tree",
+      "title": "Test GET /api/v1/workspaces/{workspaceId}/tree",
+      "inputValues": {
+        "workspaceId": "",
+        "depth": "",
+        "extension": ""
+      }
+    }
+  },
+  {
+    "id": "search-files",
+    "path": "/api/v1/workspaces/{workspaceId}/files/search",
+    "method": "GET",
+    "description": "Busca archivos por patrón glob, nombre o contenido",
+    "parameters": {
+      "workspaceId": {
+        "type": "string",
+        "required": true,
+        "description": "ID del workspace"
+      },
+      "q": {
+        "type": "string",
+        "required": true,
+        "description": "Término de búsqueda"
+      },
+      "type": {
+        "type": "string",
+        "required": false,
+        "description": "Tipo de búsqueda: glob, name, content"
+      }
+    },
+    "testTask": {
+      "id": "test-search-files",
+      "endpointId": "search-files",
+      "method": "POST",
+      "path": "/api/generate-api/test/search-files",
+      "title": "Test GET /api/v1/workspaces/{workspaceId}/files/search",
+      "inputValues": {
+        "workspaceId": "",
+        "q": "",
+        "type": ""
+      }
+    }
+  },
+  {
+    "id": "get-file-info",
+    "path": "/api/v1/workspaces/{workspaceId}/files/{fileId}/info",
+    "method": "GET",
+    "description": "Obtiene metadatos del archivo",
+    "parameters": {
+      "workspaceId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: workspaceId"
+      },
+      "fileId": {
+        "type": "string",
+        "required": true,
+        "description": "ID del archivo (ruta relativa codificada)"
+      }
+    },
+    "testTask": {
+      "id": "test-get-file-info",
+      "endpointId": "get-file-info",
+      "method": "POST",
+      "path": "/api/generate-api/test/get-file-info",
+      "title": "Test GET /api/v1/workspaces/{workspaceId}/files/{fileId}/info",
+      "inputValues": {
+        "workspaceId": "",
+        "fileId": ""
+      }
+    }
+  },
+  {
+    "id": "get-file-content",
+    "path": "/api/v1/workspaces/{workspaceId}/files/{fileId}/content",
+    "method": "GET",
+    "description": "Lee el contenido completo o un rango de líneas",
+    "parameters": {
+      "workspaceId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: workspaceId"
+      },
+      "fileId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: fileId"
+      },
+      "lines": {
+        "type": "string",
+        "required": false,
+        "description": "Rango de líneas (ej: 100-200)"
+      },
+      "fromLine": {
+        "type": "string",
+        "required": false,
+        "description": "Línea inicial (alternativa)"
+      },
+      "toLine": {
+        "type": "string",
+        "required": false,
+        "description": "Línea final (alternativa)"
+      }
+    },
+    "testTask": {
+      "id": "test-get-file-content",
+      "endpointId": "get-file-content",
+      "method": "POST",
+      "path": "/api/generate-api/test/get-file-content",
+      "title": "Test GET /api/v1/workspaces/{workspaceId}/files/{fileId}/content",
+      "inputValues": {
+        "workspaceId": "",
+        "fileId": "",
+        "lines": "",
+        "fromLine": "",
+        "toLine": ""
+      }
+    }
+  },
+  {
+    "id": "get-file-chunk",
+    "path": "/api/v1/workspaces/{workspaceId}/files/{fileId}/chunk",
+    "method": "GET",
+    "description": "Lee un fragmento del archivo a nivel de bytes",
+    "parameters": {
+      "workspaceId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: workspaceId"
+      },
+      "fileId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: fileId"
+      },
+      "offset": {
+        "type": "integer",
+        "required": false,
+        "description": "Posición inicial en bytes"
+      },
+      "length": {
+        "type": "integer",
+        "required": false,
+        "description": "Cantidad de bytes a leer"
+      }
+    },
+    "testTask": {
+      "id": "test-get-file-chunk",
+      "endpointId": "get-file-chunk",
+      "method": "POST",
+      "path": "/api/generate-api/test/get-file-chunk",
+      "title": "Test GET /api/v1/workspaces/{workspaceId}/files/{fileId}/chunk",
+      "inputValues": {
+        "workspaceId": "",
+        "fileId": "",
+        "offset": "",
+        "length": ""
+      }
+    }
+  },
+  {
+    "id": "patch-character",
+    "path": "/api/v1/workspaces/{workspaceId}/files/{fileId}/character",
+    "method": "PATCH",
+    "description": "Reemplaza caracteres en una posición exacta",
+    "parameters": {
+      "workspaceId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: workspaceId"
+      },
+      "fileId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: fileId"
+      }
+    },
+    "requestBody": {
+      "operation": "replaceCharacters",
+      "position": {
+        "line": 42,
+        "column": 5,
+        "offset": 1200
+      },
+      "length": 1,
+      "newText": "x",
+      "expectedCurrentText": "y"
+    },
+    "testTask": {
+      "id": "test-patch-character",
+      "endpointId": "patch-character",
+      "method": "POST",
+      "path": "/api/generate-api/test/patch-character",
+      "title": "Test PATCH /api/v1/workspaces/{workspaceId}/files/{fileId}/character",
+      "inputValues": {
+        "workspaceId": "",
+        "fileId": ""
+      }
+    }
+  },
+  {
+    "id": "patch-line",
+    "path": "/api/v1/workspaces/{workspaceId}/files/{fileId}/line",
+    "method": "PATCH",
+    "description": "Reemplaza una línea o rango de líneas",
+    "parameters": {
+      "workspaceId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: workspaceId"
+      },
+      "fileId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: fileId"
+      }
+    },
+    "requestBody": {
+      "operation": "replaceLines",
+      "lineRange": {
+        "start": 50,
+        "end": 52
+      },
+      "newText": "const foo = 'bar';",
+      "expectedContent": "const foo = 'baz';"
+    },
+    "testTask": {
+      "id": "test-patch-line",
+      "endpointId": "patch-line",
+      "method": "POST",
+      "path": "/api/generate-api/test/patch-line",
+      "title": "Test PATCH /api/v1/workspaces/{workspaceId}/files/{fileId}/line",
+      "inputValues": {
+        "workspaceId": "",
+        "fileId": ""
+      }
+    }
+  },
+  {
+    "id": "patch-fragment",
+    "path": "/api/v1/workspaces/{workspaceId}/files/{fileId}/fragment",
+    "method": "PATCH",
+    "description": "Inserta o elimina un bloque de texto",
+    "parameters": {
+      "workspaceId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: workspaceId"
+      },
+      "fileId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: fileId"
+      }
+    },
+    "requestBody": {
+      "operation": "insertBeforeLine",
+      "line": 10,
+      "block": "function newFunc() {...}"
+    },
+    "testTask": {
+      "id": "test-patch-fragment",
+      "endpointId": "patch-fragment",
+      "method": "POST",
+      "path": "/api/generate-api/test/patch-fragment",
+      "title": "Test PATCH /api/v1/workspaces/{workspaceId}/files/{fileId}/fragment",
+      "inputValues": {
+        "workspaceId": "",
+        "fileId": ""
+      }
+    }
+  },
+  {
+    "id": "put-file-content",
+    "path": "/api/v1/workspaces/{workspaceId}/files/{fileId}/content",
+    "method": "PUT",
+    "description": "Reemplaza el contenido completo del archivo",
+    "parameters": {
+      "workspaceId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: workspaceId"
+      },
+      "fileId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: fileId"
+      }
+    },
+    "requestBody": {
+      "content": "new file content"
+    },
+    "testTask": {
+      "id": "test-put-file-content",
+      "endpointId": "put-file-content",
+      "method": "POST",
+      "path": "/api/generate-api/test/put-file-content",
+      "title": "Test PUT /api/v1/workspaces/{workspaceId}/files/{fileId}/content",
+      "inputValues": {
+        "workspaceId": "",
+        "fileId": ""
+      }
+    }
+  },
+  {
+    "id": "create-context",
+    "path": "/api/v1/workspaces/{workspaceId}/context",
+    "method": "POST",
+    "description": "Crea un contexto de edición transaccional",
+    "parameters": {
+      "workspaceId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: workspaceId"
+      }
+    },
+    "testTask": {
+      "id": "test-create-context",
+      "endpointId": "create-context",
+      "method": "POST",
+      "path": "/api/generate-api/test/create-context",
+      "title": "Test POST /api/v1/workspaces/{workspaceId}/context",
+      "inputValues": {
+        "workspaceId": ""
+      }
+    }
+  },
+  {
+    "id": "commit-context",
+    "path": "/api/v1/workspaces/{workspaceId}/context/{contextId}/commit",
+    "method": "POST",
+    "description": "Aplica atómicamente todos los cambios del contexto",
+    "parameters": {
+      "workspaceId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: workspaceId"
+      },
+      "contextId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: contextId"
+      }
+    },
+    "testTask": {
+      "id": "test-commit-context",
+      "endpointId": "commit-context",
+      "method": "POST",
+      "path": "/api/generate-api/test/commit-context",
+      "title": "Test POST /api/v1/workspaces/{workspaceId}/context/{contextId}/commit",
+      "inputValues": {
+        "workspaceId": "",
+        "contextId": ""
+      }
+    }
+  },
+  {
+    "id": "discard-context",
+    "path": "/api/v1/workspaces/{workspaceId}/context/{contextId}",
+    "method": "DELETE",
+    "description": "Descarta el contexto sin aplicar cambios",
+    "parameters": {
+      "workspaceId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: workspaceId"
+      },
+      "contextId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: contextId"
+      }
+    },
+    "testTask": {
+      "id": "test-discard-context",
+      "endpointId": "discard-context",
+      "method": "POST",
+      "path": "/api/generate-api/test/discard-context",
+      "title": "Test DELETE /api/v1/workspaces/{workspaceId}/context/{contextId}",
+      "inputValues": {
+        "workspaceId": "",
+        "contextId": ""
+      }
+    }
+  },
+  {
+    "id": "get-file-history",
+    "path": "/api/v1/workspaces/{workspaceId}/files/{fileId}/history",
+    "method": "GET",
+    "description": "Historial de cambios del archivo",
+    "parameters": {
+      "workspaceId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: workspaceId"
+      },
+      "fileId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: fileId"
+      }
+    },
+    "testTask": {
+      "id": "test-get-file-history",
+      "endpointId": "get-file-history",
+      "method": "POST",
+      "path": "/api/generate-api/test/get-file-history",
+      "title": "Test GET /api/v1/workspaces/{workspaceId}/files/{fileId}/history",
+      "inputValues": {
+        "workspaceId": "",
+        "fileId": ""
+      }
+    }
+  },
+  {
+    "id": "revert-file-history",
+    "path": "/api/v1/workspaces/{workspaceId}/files/{fileId}/history/{changeId}/revert",
+    "method": "POST",
+    "description": "Revierte el archivo a un estado anterior",
+    "parameters": {
+      "workspaceId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: workspaceId"
+      },
+      "fileId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: fileId"
+      },
+      "changeId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: changeId"
+      }
+    },
+    "testTask": {
+      "id": "test-revert-file-history",
+      "endpointId": "revert-file-history",
+      "method": "POST",
+      "path": "/api/generate-api/test/revert-file-history",
+      "title": "Test POST /api/v1/workspaces/{workspaceId}/files/{fileId}/history/{changeId}/revert",
+      "inputValues": {
+        "workspaceId": "",
+        "fileId": "",
+        "changeId": ""
+      }
+    }
+  },
+  {
+    "id": "create-backup",
+    "path": "/api/v1/workspaces/{workspaceId}/files/{fileId}/backup",
+    "method": "POST",
+    "description": "Genera un respaldo manual del archivo",
+    "parameters": {
+      "workspaceId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: workspaceId"
+      },
+      "fileId": {
+        "type": "string",
+        "required": true,
+        "description": "Path parameter: fileId"
+      }
+    },
+    "testTask": {
+      "id": "test-create-backup",
+      "endpointId": "create-backup",
+      "method": "POST",
+      "path": "/api/generate-api/test/create-backup",
+      "title": "Test POST /api/v1/workspaces/{workspaceId}/files/{fileId}/backup",
+      "inputValues": {
+        "workspaceId": "",
+        "fileId": ""
+      }
+    }
+  }
+]
