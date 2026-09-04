@@ -68,6 +68,20 @@ export default function PreviewTab() {
     setTimeout(() => setIsChecking(false), 1000);
   };
 
+  // Recargar preview cuando el modelo modifica archivos (zeus:file-changed → zeus:preview-reload)
+  useEffect(() => {
+    const handlePreviewReload = () => {
+      const iframe = iframeRef.current;
+      if (iframe && url) {
+        setIsLoading(true);
+        setHasError(false);
+        iframe.src = url;
+      }
+    };
+    window.addEventListener('zeus:preview-reload', handlePreviewReload);
+    return () => window.removeEventListener('zeus:preview-reload', handlePreviewReload);
+  }, [url]);
+
   return (
     <div className="h-full w-full flex flex-col bg-transparent">
       {/* Barra de herramientas del preview */}

@@ -21,7 +21,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'actions debe ser un array' }, { status: 400 });
     }
 
-    const resolved = resolveAllowedWorkspaceRoot(clientProjectRoot || '');
+    const resolved = await resolveAllowedWorkspaceRoot(clientProjectRoot || '');
     if (!resolved.ok) {
       return NextResponse.json({ error: resolved.message }, { status: resolved.status });
     }

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 
 // Importar Heroicons comunes para preview
+import { sessionFetch } from '@/lib/projectStore';
 import {
   HomeIcon, UserIcon, CogIcon, HeartIcon, StarIcon, EnvelopeIcon, PhoneIcon, CalendarIcon, CameraIcon, PencilIcon,
   TrashIcon, PlusIcon, MinusIcon, XMarkIcon, BoltIcon, ArrowPathIcon, AdjustmentsHorizontalIcon, BellIcon, BookmarkIcon,
@@ -522,7 +523,7 @@ export function FileIconEditor({
         const absolutePath = `${normalizedProjectPath}${sep}public${sep}icons${sep}${file.name}`;
 
         try {
-          const response = await fetch('/api/save-file', {
+          const response = await sessionFetch('/api/save-file', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
+import type { ToolLogEntry } from '@/components/chat/ToolCallDisplay';
 
 export type ChatMessage = {
   id: string;
@@ -11,6 +12,7 @@ export type ChatMessage = {
   language?: string;
   fileInfo?: Record<string, unknown> | null;
   action_type?: string;
+  toolLog?: ToolLogEntry[];
 };
 
 const STORAGE_KEY = 'zeus_chat_persisted';
@@ -62,7 +64,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [conversationId, setConversationId] = useState<string | null>(() => loadPersisted().conversationId);
   const [messages, setMessages] = useState<ChatMessage[]>(() => loadPersisted().messages);
   const [refreshConversations, setRefreshConversations] = useState(0);
-  const hydratedConversationIdRef = useRef<string | null>(null);
+  // Id de la conversación persistida del ARRANQUE (primer render). Solo ESTE id
+  // se hidrata automáticamente; los cambios posteriores de conversationId (p.ej.
+  // cuando el modelo responde y el chat recibe el id nuevo en `done`) NO deben
+  // re-hidratar ni pisar los mensajes que ya están en pantalla.
+  const bootConversationIdRef = useRef<string | null>(conversationId);
+  const hydratedRef = useRef(false);
 
   useEffect(() => {
     savePersisted(conversationId, messages);
@@ -112,6 +119,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         type?: string;
         language?: string;
         fileInfo?: Record<string, unknown> | null;
+        toolLog?: any[] | null;
         action_type?: string;
       }) => ({
         id: m.id || `${Date.now()}.${Math.random().toString(36).slice(2)}`,
@@ -121,6 +129,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         type: m.type,
         language: m.language,
         fileInfo: m.fileInfo ?? null,
+        toolLog: m.toolLog ?? null,
         action_type: m.action_type,
       }));
       console.log('💬 ChatContext: Mensajes procesados:', msgs);
@@ -129,21 +138,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       console.log('✅ ChatContext: Conversación cargada exitosamente');
     } catch (error) {
       console.error('❌ ChatContext: Error al cargar conversación:', error);
-      setConversationId(id);
-      setMessages([]);
+      // NO vaciar los mensajes en pantalla: un fallo de red/BD no debe borrar
+      // el chat visible (los mensajes siguen en localStorage y en BD).
     }
   }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!conversationId) return;
-    if (hydratedConversationIdRef.current === conversationId) return;
+    // Solo hidratar la conversación persistida del ARRANQUE (una vez).
+    // Si el usuario ya está en otra conversación o el id cambió (respuesta del
+    // modelo, nueva conversación), no tocar los mensajes en pantalla.
+    const bootId = bootConversationIdRef.current;
+    if (!bootId) return;
+    if (hydratedRef.current) return;
+    if (conversationId !== bootId) return;
 
     const pbAuth = localStorage.getItem('pb_auth');
     if (!pbAuth) return;
 
-    hydratedConversationIdRef.current = conversationId;
-    loadConversation(conversationId).catch((error) => {
+    hydratedRef.current = true;
+    loadConversation(bootId).catch((error) => {
       console.error('❌ ChatContext: Error hidratando conversación persistida:', error);
     });
   }, [conversationId, loadConversation]);

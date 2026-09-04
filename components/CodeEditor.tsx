@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { useStore } from '@/lib/store';
 import { onThemeChange, getStoredTheme, emitThemeChange } from '@/lib/zeus-monaco/theme';
 import { getActiveMonacoTheme, onMonacoThemeChange } from '@/lib/zeus-monaco/monaco-theme-service';
+import { sessionFetch } from '@/lib/projectStore';
 // host se importa dinámicamente en beforeMount para no romper el SSR
 // (host.ts → monaco-editor → window no definido en server).
 // import { host as zeusHost } from '@/lib/zeus-monaco/host';
@@ -318,7 +319,7 @@ export default function CodeEditor({
 
       console.log('[CodeEditor] Enviando modelRecordId:', selectedModel.id);
 
-      const response = await fetch('/api/fix-error', {
+      const response = await sessionFetch('/api/fix-error', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -447,7 +448,7 @@ export default function CodeEditor({
     // Obtener estructura del proyecto en segundo plano
     let structureTree = '';
     try {
-      const response = await fetch('/api/schema/simple');
+      const response = await sessionFetch('/api/schema/simple');
       const result = await response.json();
       if (result.success && result.schema) {
         const formatSchema = (node: any, depth = 0): string => {
@@ -953,7 +954,7 @@ export default function CodeEditor({
           const folderPath = lastSlashIndex >= 0 ? path.substring(0, lastSlashIndex) : '';
 
           // Guardar vía API
-          fetch('/api/ide-files', {
+          sessionFetch('/api/ide-files', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'save', path: folderPath, name: fileName, content: newContent })
@@ -1058,7 +1059,7 @@ export default function CodeEditor({
       const fileName = lastSlashIndex >= 0 ? path.substring(lastSlashIndex + 1) : path;
       const folderPath = lastSlashIndex >= 0 ? path.substring(0, lastSlashIndex) : '';
 
-      fetch('/api/ide-files', {
+      sessionFetch('/api/ide-files', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'save', path: folderPath, name: fileName, content })
@@ -1393,7 +1394,7 @@ export default function CodeEditor({
       // Obtener estructura del proyecto en segundo plano
       let structureTree = '';
       try {
-        const response = await fetch('/api/schema/simple');
+        const response = await sessionFetch('/api/schema/simple');
         const result = await response.json();
         if (result.success && result.schema) {
           const formatSchema = (node: any, depth = 0): string => {
@@ -1631,7 +1632,7 @@ INSTRUCCIONES ESTRICTAS:
       const fileName = path.split(/[\\/]/).pop() || '';
       const filePath = path.substring(0, Math.max(0, path.lastIndexOf('/') !== -1 ? path.lastIndexOf('/') : path.lastIndexOf('\\')));
       
-      const response = await fetch('/api/ide-files/undo', {
+      const response = await sessionFetch('/api/ide-files/undo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: filePath, name: fileName })

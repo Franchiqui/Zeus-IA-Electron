@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Terminal as TerminalIcon, Trash2, RefreshCw, AlertCircle, Copy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/lib/store';
+import { useProjectStore, sessionFetch } from '@/lib/projectStore';
 import 'xterm/css/xterm.css';
 
 interface ChatTerminalBubbleProps {
@@ -78,7 +79,7 @@ const ChatTerminalBubble = ({ isVisible, isMaximized = false }: ChatTerminalBubb
     if (typeof window === 'undefined') return;
 
     const assignBaseDirName = (pathValue?: string | null) => {
-      const source = pathValue || localStorage.getItem('ZEUS_DATA_PATH') || '';
+      const source = pathValue || useProjectStore.getState().activeCwd || '';
       (window as any).chatTerminalBaseDirName = getBaseFolderName(source);
       if (source) {
         setCurrentDataPath(String(source));
@@ -88,7 +89,7 @@ const ChatTerminalBubble = ({ isVisible, isMaximized = false }: ChatTerminalBubb
 
     const loadDataPath = async () => {
       try {
-        const res = await fetch('/api/config/data-path');
+        const res = await sessionFetch('/api/config/data-path');
         if (!res.ok) {
           assignBaseDirName();
           return;
@@ -115,14 +116,13 @@ const ChatTerminalBubble = ({ isVisible, isMaximized = false }: ChatTerminalBubb
 
     const refreshDataPath = async () => {
       try {
-        const res = await fetch('/api/config/data-path');
+        const res = await sessionFetch('/api/config/data-path');
         if (!res.ok) return;
         const data = await res.json();
         if (typeof data?.dataPath === 'string' && data.dataPath.trim()) {
           const latestPath = data.dataPath.trim();
           setCurrentDataPath(latestPath);
           (window as any).chatTerminalBaseDirName = getBaseFolderName(latestPath);
-          localStorage.setItem('ZEUS_DATA_PATH', latestPath);
           syncTerminalWorkingDirectory(latestPath);
         }
       } catch {
@@ -261,7 +261,7 @@ const ChatTerminalBubble = ({ isVisible, isMaximized = false }: ChatTerminalBubb
               (window as any).isChatTerminalReady = true;
             }
             terminal.write('\x1b[32m[SISTEMA] Zeus Terminal Conectado\x1b[0m\r\n');
-            const targetPath = currentDataPathRef.current || localStorage.getItem('ZEUS_DATA_PATH') || '';
+            const targetPath = currentDataPathRef.current || useProjectStore.getState().activeCwd || '';
             if (targetPath) {
               setTimeout(() => syncTerminalWorkingDirectory(targetPath, { silent: true, force: true }), 80);
             }

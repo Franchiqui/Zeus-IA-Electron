@@ -220,8 +220,6 @@ ${file.content.substring(0, 1000)}${file.content.length > 1000 ? '...' : ''}
     });
     basePrompt += `\n\nINSTRUCCIONES PARA ARCHIVOS DE REFERENCIA: Usa el contenido de estos archivos como base, inspiración o datos para el código que generes. Si es documentación, incorpórala en el texto de la UI. Si son datos (JSON, CSV), úsalos en el componente. Si es código, inspírate en la estructura pero adapta al framework ${template}.`;
   }
-  
-  const hasUserUploadedImages = uploadedImages && uploadedImages.length > 0 && uploadedImages.some((img: any) => img.dataUrl || img.path);
 
   if (uploadedImages && uploadedImages.length > 0) {
     basePrompt += `\n\n**IMÁGENES DE REFERENCIA (OBLIGATORIO: USAR ESTAS IMÁGENES EN EL CÓDIGO GENERADO)**:`;
@@ -242,11 +240,10 @@ ${file.content.substring(0, 1000)}${file.content.length > 1000 ? '...' : ''}
     basePrompt += `\n\nIMPORTANTE: Las imágenes listadas arriba DEBEN ser incluidas directamente en el código generado, especialmente en componentes como hero sections, galerías, cards de características, etc. NO uses URLs de imágenes genéricas de internet.`;
   }
 
-  // Solo usar imágenes de Unsplash si el usuario NO subió sus propias imágenes
-  if (!hasUserUploadedImages) {
-    const exampleImages = await fetchUnsplashImages(6, description);
-    basePrompt += `\n\n**IMÁGENES REALES** (usar estas URLs):\n${exampleImages.map((url: string, index: number) => `${index + 1}. ${url}`).join('\n')}`;
-  }
+  // NOTA: NO se inyectan imágenes de Unsplash automáticamente. Esto es una
+  // APLICACIÓN web funcional, no una landing page de marketing. Si el usuario
+  // subió imágenes se usan (bloque anterior); si no, el modelo genera la app
+  // con su funcionalidad real sin fotos de relleno.
 
   // Prompts específicos según el tipo de archivo
   if (isComponent) {
@@ -278,9 +275,9 @@ ${file.content.substring(0, 1000)}${file.content.length > 1000 ? '...' : ''}
 - **CRÍTICO**: NO crees elementos footer inline. SIEMPRE usa el componente Footer importado. El componente Footer manejará automáticamente el texto de copyright.
 - El componente Footer DEBE estar incluido en la estructura JSX del componente de la página.
 - **CRÍTICO PADDING**: El Footer está fijo en la parte inferior (fixed bottom-0). El contenedor principal DEBE tener padding-bottom (pb-20 o pb-24) para evitar que el contenido se oculte detrás del footer. Ejemplo: <div className="min-h-screen pb-20 bg-white"> o <main className="pb-20">.
-- Si la aplicación requiere fotos (hero, galería, testimonios, productos, etc.), USA las imágenes reales proporcionadas arriba en **IMÁGENES REALES**.
-- Incluye testimonios con fotos reales cuando sea apropiado.
-- Incluye galerías o cards con imágenes reales cuando sea apropiado.`;
+- **ES UNA APLICACIÓN FUNCIONAL, NO UNA LANDING PAGE**: Este proyecto es una aplicación web real con funcionalidad (formularios, CRUD, estado, interacción, navegación entre vistas), NO una página web de presentación.
+- **NO inventes contenido de marketing**: NO incluyas testimonios de clientes, secciones "Sobre nosotros" de relleno, ni galerías decorativas A MENOS QUE la descripción del usuario lo pida explícitamente.
+- **Fotos**: Si la descripción NO pide fotos/galería de productos explícitamente, no añadas imágenes de stock. Prioriza la interfaz y la funcionalidad.`;
   } else if (isLayout) {
     basePrompt += `
 
@@ -444,9 +441,8 @@ async function generateFileContentWithStreaming(
 
   if (isOllamaCloud) {
     const systemMessage = optimizeForSpeed
-      ? 'Genera código funcional básico. SOLO código, sin explicaciones. Sé muy conciso.'
-      : 'Genera código production-ready siguiendo mejores prácticas. Responde SOLO con código, sin explicaciones ni markdown. Sé conciso pero completo.';
-
+      ? 'Genera código funcional básico para una APLICACIÓN web funcional (no una landing page de marketing). SOLO código, sin explicaciones. Sé muy conciso.'
+      : 'Genera código production-ready para una APLICACIÓN web funcional con lógica real (formularios, CRUD, estado, navegación), NO una página web de presentación con testimonios ni secciones de marketing de relleno. Responde SOLO con código, sin explicaciones ni markdown. Sé conciso pero completo.';
     return createOllamaCloudStream({
       prompt,
       systemMessage,
@@ -488,8 +484,8 @@ async function generateFileContentWithStreaming(
               {
                 role: 'system',
                 content: optimizeForSpeed 
-                  ? 'Genera código funcional básico. SOLO código, sin explicaciones. Sé muy conciso.'
-                  : 'Genera código production-ready siguiendo mejores prácticas. Responde SOLO con código, sin explicaciones ni markdown. Sé conciso pero completo.'
+                  ? 'Genera código funcional básico para una APLICACIÓN web funcional (no una landing page de marketing). SOLO código, sin explicaciones. Sé muy conciso.'
+                  : 'Genera código production-ready para una APLICACIÓN web funcional con lógica real (formularios, CRUD, estado, navegación), NO una página web de presentación con testimonios ni secciones de marketing de relleno. Responde SOLO con código, sin explicaciones ni markdown. Sé conciso pero completo.'
               },
               {
                 role: 'user',

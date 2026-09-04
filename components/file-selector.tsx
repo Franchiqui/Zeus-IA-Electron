@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { sessionFetch } from '@/lib/projectStore';
 
 // ==================================================================
 // Tipado (Ajustar si existen interfaces globales más detalladas)
@@ -65,7 +66,7 @@ const FileSelector: React.FC<FileSelectorProps> = ({ onScanComplete }: FileSelec
 
     try {
       // Asumiendo que el endpoint existe y maneja el escaneo del sistema de archivos.
-      const response = await fetch('/api/scan', { 
+      const response = await sessionFetch('/api/scan', { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ paths: selectedPaths }),

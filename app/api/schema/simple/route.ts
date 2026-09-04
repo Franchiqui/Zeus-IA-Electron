@@ -67,7 +67,7 @@ async function buildSchema(dirPath: string, relPath: string): Promise<SchemaItem
 
 export async function GET() {
   try {
-    const baseDataPath = getBaseDataPath();
+    const baseDataPath = await getBaseDataPath();
 
     if (!fsSync.existsSync(baseDataPath)) {
       return NextResponse.json({ success: false, error: 'Directorio no existe' }, { status: 404 });

@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { useEditor } from '@/context/editor-context';
 import { useStore } from '@/lib/store';
 import { useTranslation } from '@/contexts/translation-context';
+import { useProjectStore, sessionFetch } from '@/lib/projectStore';
 
 export default function TerminalPanel({ explorerPath: propExplorerPath }: { explorerPath?: string }) {
   const { t } = useTranslation();
@@ -87,7 +88,7 @@ export default function TerminalPanel({ explorerPath: propExplorerPath }: { expl
 
       for (const candidatePath of pathsToCheck) {
         try {
-          const res = await fetch(`/api/ide-files?name=package.json&path=${encodeURIComponent(candidatePath)}`);
+          const res = await sessionFetch(`/api/ide-files?name=package.json&path=${encodeURIComponent(candidatePath)}`);
           if (!res.ok) continue;
           const data = await res.json();
           if (data.success && data.content) {
@@ -164,11 +165,11 @@ export default function TerminalPanel({ explorerPath: propExplorerPath }: { expl
     setIsBuildingApk(true);
     setApkDownloadUrl(null);
     try {
-      const dataPath = currentDataPathRef.current || localStorage.getItem('ZEUS_DATA_PATH') || '';
+      const dataPath = currentDataPathRef.current || useProjectStore.getState().activeCwd || '';
       const explorerPath = localStorage.getItem('zeus_current_explorer_path') || '';
       const fullProjectPath = explorerPath ? `${dataPath}/${explorerPath}`.replace(/\/+/g, '/') : dataPath;
 
-      const res = await fetch('/api/build-apk', {
+      const res = await sessionFetch('/api/build-apk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectPath: fullProjectPath })
@@ -229,14 +230,13 @@ export default function TerminalPanel({ explorerPath: propExplorerPath }: { expl
 
     const loadDataPath = async () => {
       try {
-        const res = await fetch('/api/config/data-path');
+        const res = await sessionFetch('/api/config/data-path');
         if (!res.ok) return;
         const data = await res.json();
         if (typeof data?.dataPath === 'string' && data.dataPath.trim()) {
           const latestPath = data.dataPath.trim();
           setCurrentDataPath(latestPath);
           (window as any).chatTerminalBaseDirName = getBaseFolderName(latestPath);
-          localStorage.setItem('ZEUS_DATA_PATH', latestPath);
           syncTerminalWorkingDirectory(latestPath);
           return;
         }
@@ -244,7 +244,7 @@ export default function TerminalPanel({ explorerPath: propExplorerPath }: { expl
         // fallback local
       }
 
-      const cached = localStorage.getItem('ZEUS_DATA_PATH');
+      const cached = useProjectStore.getState().activeCwd || '';
       if (cached) {
         setCurrentDataPath(cached);
         (window as any).chatTerminalBaseDirName = getBaseFolderName(cached);
@@ -314,7 +314,7 @@ export default function TerminalPanel({ explorerPath: propExplorerPath }: { expl
           ws.onopen = () => {
             setIsConnected(true);
             // Eliminamos el mensaje de bienvenida para que el prompt suba al inicio
-            const targetPath = currentDataPathRef.current || localStorage.getItem('ZEUS_DATA_PATH') || '';
+            const targetPath = currentDataPathRef.current || useProjectStore.getState().activeCwd || '';
             if (targetPath) {
               setTimeout(() => syncTerminalWorkingDirectory(targetPath, { silent: true, force: true }), 80);
             }

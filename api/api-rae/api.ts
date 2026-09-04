@@ -95,7 +95,16 @@ function registerCrudRoutes(collectionName: string, basePath: string) {
       const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
       const rawPerPage = Number(req.query.perPage ?? req.query.limit ?? 30);
       const perPage = Number.isFinite(rawPerPage) && rawPerPage > 0 ? rawPerPage : 30;
-      const result = await svc.getList(page, perPage);
+
+      const options: Record<string, unknown> = {};
+      const sort = req.query.sort;
+      if (typeof sort === 'string' && sort) options.sort = sort;
+      const fields = req.query.fields;
+      if (typeof fields === 'string' && fields) options.fields = fields;
+      const filter = req.query.filter;
+      if (typeof filter === 'string' && filter) options.filter = filter;
+
+      const result = await svc.getList(page, perPage, options);
       res.json(result);
     } catch (e) {
       res.status(500).json({ error: String(e) });
@@ -141,6 +150,110 @@ function registerCrudRoutes(collectionName: string, basePath: string) {
     }
   });
 }
+
+// ===== Rutas literales anidadas bajo colecciones CRUD =====
+// IMPORTANTE: deben registrarse ANTES que registerCrudRoutes(), porque este
+// último registra `GET /<base>/:id` y Express evalúa las rutas en orden de
+// registro. Si /:id se registra primero, captura sub-rutas literales como
+// "active" o "create-embedding-model" (id = "active"...) y devuelve 404.
+
+// Get active pipeline config
+app.get('/api/v1/pipeline-configs/active', async (req: Request, res: Response) => {
+  try {
+    const svc = __zeusCollection(pb, 'pipeline_configs');
+
+    // Intentar con filtro booleano explícito (string para PocketBase)
+    let result = await svc.getMany({ filter: 'isActive = true', limit: 1 });
+    let configs = result.records || [];
+
+    // Fallback: si no encuentra, listar todas y filtrar localmente
+    if (configs.length === 0) {
+      console.log('[Pipeline/active] Filtro booleano no devolvió resultados, intentando listar todas...');
+      const allResult = await svc.getMany({ limit: 100 });
+      const allConfigs = allResult.records || [];
+      console.log('[Pipeline/active] Total pipeline configs en BD:', allConfigs.length);
+      console.log('[Pipeline/active] Estados isActive:', allConfigs.map((c: any) => ({ id: c.id, name: c.name, isActive: c.isActive })));
+      configs = allConfigs.filter((c: any) => c.isActive === true || c.isActive === 1 || c.isActive === 'true');
+    }
+
+    if (configs.length === 0) {
+      console.log('[Pipeline/active] No hay pipeline activo');
+      return res.status(404).json({ error: 'No active pipeline config' });
+    }
+
+    console.log('[Pipeline/active] Pipeline activo encontrado:', configs[0].id, configs[0].name);
+    res.json(configs[0]);
+  } catch (e) {
+    console.error('[Pipeline/active] Error:', e);
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// Create embedding model if not exists
+app.post('/api/v1/models/create-embedding-model', async (req: Request, res: Response) => {
+  try {
+    await authAsAdmin();
+    const modelSvc = __zeusCollection(pb, 'models');
+    const providerSvc = __zeusCollection(pb, 'providers');
+
+    // 1. Ensure Ollama provider exists
+    let provider: any;
+    const providersRes = await providerSvc.getMany({ filter: 'name = "Ollama"', limit: 1 });
+    if (providersRes.records?.length > 0) {
+      provider = providersRes.records[0];
+    } else {
+      provider = await providerSvc.create({
+        name: 'Ollama',
+        baseUrl: OLLAMA_BASE_URL,
+        apiKey: '',
+        isActive: true
+      });
+    }
+
+    // 2. Ensure embedding model exists
+    const modelsRes = await modelSvc.getMany({ filter: `name = "${OLLAMA_EMBED_MODEL}"`, limit: 1 });
+    if (modelsRes.records?.length > 0) {
+      return res.json(modelsRes.records[0]);
+    }
+
+    const newModel = await modelSvc.create({
+      name: OLLAMA_EMBED_MODEL,
+      providerId: provider.id,
+      modelName: OLLAMA_EMBED_MODEL,
+      temperature: 0,
+      maxTokens: 2048,
+      isActive: true,
+      isEmbedding: true
+    });
+
+    res.status(201).json(newModel);
+  } catch (e) {
+    console.error('Error in create-embedding-model:', e);
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// Fix pipeline embedding model reference
+app.post('/api/v1/pipeline-configs/fix-embedding-model', async (req: Request, res: Response) => {
+  try {
+    await authAsAdmin();
+    const pipelineSvc = __zeusCollection(pb, 'pipeline_configs');
+    const modelSvc = __zeusCollection(pb, 'models');
+
+    const result = await pipelineSvc.getMany({ filter: { isActive: true }, limit: 1 });
+    if (result.records?.length === 0) return res.status(404).json({ error: 'No active pipeline' });
+    const config = result.records[0];
+
+    const modelsRes = await modelSvc.getMany({ filter: `name = "${OLLAMA_EMBED_MODEL}"`, limit: 1 });
+    if (modelsRes.records?.length === 0) return res.status(404).json({ error: 'Embedding model not found' });
+    const model = modelsRes.records[0];
+
+    const updated = await pipelineSvc.update(config.id, { embeddingModelId: model.id });
+    res.json({ success: true, config: updated });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
 
 // Register standard CRUD routes
 registerCrudRoutes('providers', '/api/v1/providers');
@@ -992,103 +1105,83 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return denom === 0 ? 0 : dot / denom;
 }
 
-// Get active pipeline config
-app.get('/api/v1/pipeline-configs/active', async (req: Request, res: Response) => {
-  try {
-    const svc = __zeusCollection(pb, 'pipeline_configs');
-
-    // Intentar con filtro booleano explícito (string para PocketBase)
-    let result = await svc.getMany({ filter: 'isActive = true', limit: 1 });
-    let configs = result.records || [];
-
-    // Fallback: si no encuentra, listar todas y filtrar localmente
-    if (configs.length === 0) {
-      console.log('[Pipeline/active] Filtro booleano no devolvió resultados, intentando listar todas...');
-      const allResult = await svc.getMany({ limit: 100 });
-      const allConfigs = allResult.records || [];
-      console.log('[Pipeline/active] Total pipeline configs en BD:', allConfigs.length);
-      console.log('[Pipeline/active] Estados isActive:', allConfigs.map((c: any) => ({ id: c.id, name: c.name, isActive: c.isActive })));
-      configs = allConfigs.filter((c: any) => c.isActive === true || c.isActive === 1 || c.isActive === 'true');
+// Pipeline phases 1-3: Ingesta → Recuperación → Orquestación.
+// Devuelve el contexto RAG sin generar la respuesta final (fase 4),
+// para que el chat (Next.js) pueda combinarlo con tool calls nativas.
+async function runPipelinePhases(
+  config: any,
+  message: string,
+  stream: boolean,
+  onStatus?: (payload: Record<string, unknown>) => void
+): Promise<{ phase1Content: string; phase3Content: string; retrievedChunks: string[]; contextText: string }> {
+  // Phase 1: Ingesta/Pre-procesamiento
+  console.log(`[Pipeline] Phase 1: Ingestion (${config.ingestionModelId || 'skipped'}, active: ${config.ingestionActive !== false})`);
+  let phase1Content = message;
+  if (config.ingestionModelId && config.ingestionActive !== false) {
+    const ingestionPrompt = config.systemPrompt
+      ? `${config.systemPrompt}\n\nResume el siguiente texto para facilitar su embedding, manteniendo la información clave:`
+      : 'Resume el siguiente texto para facilitar su embedding, manteniendo la información clave:';
+    try {
+      console.log(`[Pipeline] Calling ingestion model with ID: ${config.ingestionModelId}`);
+      phase1Content = await callModelById(config.ingestionModelId, [
+        { role: 'system', content: ingestionPrompt },
+        { role: 'user', content: message }
+      ], undefined, stream);
+      if (onStatus) onStatus({ status: 'ingestion_complete' });
+    } catch (e) {
+      console.warn('[Pipeline] Ingestion failed:', e);
+      console.warn('[Pipeline] Ingestion model ID:', config.ingestionModelId);
+      if (onStatus) onStatus({ warning: 'Ingestion failed, using raw message' });
     }
-
-    if (configs.length === 0) {
-      console.log('[Pipeline/active] No hay pipeline activo');
-      return res.status(404).json({ error: 'No active pipeline config' });
-    }
-
-    console.log('[Pipeline/active] Pipeline activo encontrado:', configs[0].id, configs[0].name);
-    res.json(configs[0]);
-  } catch (e) {
-    console.error('[Pipeline/active] Error:', e);
-    res.status(500).json({ error: String(e) });
   }
-});
 
-// Create embedding model if not exists
-app.post('/api/v1/models/create-embedding-model', async (req: Request, res: Response) => {
-  try {
-    await authAsAdmin();
-    const modelSvc = __zeusCollection(pb, 'models');
-    const providerSvc = __zeusCollection(pb, 'providers');
-
-    // 1. Ensure Ollama provider exists
-    let provider: any;
-    const providersRes = await providerSvc.getMany({ filter: 'name = "Ollama"', limit: 1 });
-    if (providersRes.records?.length > 0) {
-      provider = providersRes.records[0];
-    } else {
-      provider = await providerSvc.create({
-        name: 'Ollama',
-        baseUrl: OLLAMA_BASE_URL,
-        apiKey: '',
-        isActive: true
+  // Phase 2: Recuperacion (R)
+  console.log(`[Pipeline] Phase 2: Retrieval (${config.embeddingModelId || 'skipped'}, active: ${config.retrievalActive !== false})`);
+  let retrievedChunks: string[] = [];
+  if (config.embeddingModelId && config.retrievalActive !== false) {
+    try {
+      const questionEmbedding = await generateEmbedding(phase1Content, config.embeddingModelId);
+      const chunksSvc = __zeusCollection(pb, 'chunks');
+      const allChunks = await chunksSvc.getMany({ limit: 1000 });
+      const records = allChunks.records || [];
+      const scored = records.map((r: any) => {
+        const emb = JSON.parse(r.embedding || '[]');
+        const score = cosineSimilarity(questionEmbedding, emb);
+        return { content: r.content, score };
       });
+      scored.sort((a: any, b: any) => b.score - a.score);
+      retrievedChunks = scored.slice(0, config.topK || 5).map((c: any) => c.content);
+      if (onStatus) onStatus({ status: 'retrieval_complete', chunksCount: retrievedChunks.length });
+    } catch (e) {
+      console.warn('[Pipeline] Retrieval phase error:', e);
+      if (onStatus) onStatus({ warning: 'Retrieval failed' });
     }
+  }
+  const contextText = retrievedChunks.join('\n---\n');
 
-    // 2. Ensure embedding model exists
-    const modelsRes = await modelSvc.getMany({ filter: `name = "${OLLAMA_EMBED_MODEL}"`, limit: 1 });
-    if (modelsRes.records?.length > 0) {
-      return res.json(modelsRes.records[0]);
+  // Phase 3: Orquestacion (L)
+  console.log(`[Pipeline] Phase 3: Orchestration (${config.orchestrationModelId || 'skipped'}, active: ${config.orchestrationActive !== false})`);
+  let phase3Content = contextText || phase1Content;
+  if (config.orchestrationModelId && config.orchestrationActive !== false) {
+    const orchestrationPrompt = config.systemPrompt
+      ? `${config.systemPrompt}\n\nDescompón la siguiente pregunta o texto en sub-preguntas claras que faciliten la respuesta:`
+      : 'Descompón la siguiente pregunta o texto en sub-preguntas claras que faciliten la respuesta:';
+    try {
+      console.log(`[Pipeline] Calling orchestration model with ID: ${config.orchestrationModelId}`);
+      phase3Content = await callModelById(config.orchestrationModelId, [
+        { role: 'system', content: orchestrationPrompt },
+        { role: 'user', content: contextText || phase1Content }
+      ], undefined, stream);
+      if (onStatus) onStatus({ status: 'orchestration_complete' });
+    } catch (e) {
+      console.warn('[Pipeline] Orchestration failed:', e);
+      console.warn('[Pipeline] Orchestration model ID:', config.orchestrationModelId);
+      if (onStatus) onStatus({ warning: 'Orchestration failed' });
     }
-
-    const newModel = await modelSvc.create({
-      name: OLLAMA_EMBED_MODEL,
-      providerId: provider.id,
-      modelName: OLLAMA_EMBED_MODEL,
-      temperature: 0,
-      maxTokens: 2048,
-      isActive: true,
-      isEmbedding: true
-    });
-
-    res.status(201).json(newModel);
-  } catch (e) {
-    console.error('Error in create-embedding-model:', e);
-    res.status(500).json({ error: String(e) });
   }
-});
 
-// Fix pipeline embedding model reference
-app.post('/api/v1/pipeline-configs/fix-embedding-model', async (req: Request, res: Response) => {
-  try {
-    await authAsAdmin();
-    const pipelineSvc = __zeusCollection(pb, 'pipeline_configs');
-    const modelSvc = __zeusCollection(pb, 'models');
-
-    const result = await pipelineSvc.getMany({ filter: { isActive: true }, limit: 1 });
-    if (result.records?.length === 0) return res.status(404).json({ error: 'No active pipeline' });
-    const config = result.records[0];
-
-    const modelsRes = await modelSvc.getMany({ filter: `name = "${OLLAMA_EMBED_MODEL}"`, limit: 1 });
-    if (modelsRes.records?.length === 0) return res.status(404).json({ error: 'Embedding model not found' });
-    const model = modelsRes.records[0];
-
-    const updated = await pipelineSvc.update(config.id, { embeddingModelId: model.id });
-    res.json({ success: true, config: updated });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
+  return { phase1Content, phase3Content, retrievedChunks, contextText };
+}
 
 // Pipeline chat handler function
 async function handlePipelineChat(req: Request, res: Response, config: any) {
@@ -1105,71 +1198,11 @@ async function handlePipelineChat(req: Request, res: Response, config: any) {
       res.write(`data: ${JSON.stringify({ status: 'starting', pipeline: config.name })}\n\n`);
     }
 
-    // Phase 1: Ingesta/Pre-procesamiento
-    console.log(`[Pipeline] Phase 1: Ingestion (${config.ingestionModelId || 'skipped'}, active: ${config.ingestionActive !== false})`);
-    let phase1Content = message;
-    if (config.ingestionModelId && config.ingestionActive !== false) {
-      const ingestionPrompt = config.systemPrompt
-        ? `${config.systemPrompt}\n\nResume el siguiente texto para facilitar su embedding, manteniendo la información clave:`
-        : 'Resume el siguiente texto para facilitar su embedding, manteniendo la información clave:';
-      try {
-        console.log(`[Pipeline] Calling ingestion model with ID: ${config.ingestionModelId}`);
-        phase1Content = await callModelById(config.ingestionModelId, [
-          { role: 'system', content: ingestionPrompt },
-          { role: 'user', content: message }
-        ], undefined, stream);
-        if (isStreamingStarted) res.write(`data: ${JSON.stringify({ status: 'ingestion_complete' })}\n\n`);
-      } catch (e) {
-        console.warn('[Pipeline] Ingestion failed:', e);
-        console.warn('[Pipeline] Ingestion model ID:', config.ingestionModelId);
-        if (isStreamingStarted) res.write(`data: ${JSON.stringify({ warning: 'Ingestion failed, using raw message' })}\n\n`);
-      }
-    }
-
-    // Phase 2: Recuperacion (R)
-    console.log(`[Pipeline] Phase 2: Retrieval (${config.embeddingModelId || 'skipped'}, active: ${config.retrievalActive !== false})`);
-    let retrievedChunks: string[] = [];
-    if (config.embeddingModelId && config.retrievalActive !== false) {
-      try {
-        const questionEmbedding = await generateEmbedding(phase1Content, config.embeddingModelId);
-        const chunksSvc = __zeusCollection(pb, 'chunks');
-        const allChunks = await chunksSvc.getMany({ limit: 1000 });
-        const records = allChunks.records || [];
-        const scored = records.map((r: any) => {
-          const emb = JSON.parse(r.embedding || '[]');
-          const score = cosineSimilarity(questionEmbedding, emb);
-          return { content: r.content, score };
-        });
-        scored.sort((a: any, b: any) => b.score - a.score);
-        retrievedChunks = scored.slice(0, config.topK || 5).map((c: any) => c.content);
-        if (isStreamingStarted) res.write(`data: ${JSON.stringify({ status: 'retrieval_complete', chunksCount: retrievedChunks.length })}\n\n`);
-      } catch (e) {
-        console.warn('[Pipeline] Retrieval phase error:', e);
-        if (isStreamingStarted) res.write(`data: ${JSON.stringify({ warning: 'Retrieval failed' })}\n\n`);
-      }
-    }
-    const contextText = retrievedChunks.join('\n---\n');
-
-    // Phase 3: Orquestacion (L)
-    console.log(`[Pipeline] Phase 3: Orchestration (${config.orchestrationModelId || 'skipped'}, active: ${config.orchestrationActive !== false})`);
-    let phase3Content = contextText || phase1Content;
-    if (config.orchestrationModelId && config.orchestrationActive !== false) {
-      const orchestrationPrompt = config.systemPrompt
-        ? `${config.systemPrompt}\n\nDescompón la siguiente pregunta o texto en sub-preguntas claras que faciliten la respuesta:`
-        : 'Descompón la siguiente pregunta o texto en sub-preguntas claras que faciliten la respuesta:';
-      try {
-        console.log(`[Pipeline] Calling orchestration model with ID: ${config.orchestrationModelId}`);
-        phase3Content = await callModelById(config.orchestrationModelId, [
-          { role: 'system', content: orchestrationPrompt },
-          { role: 'user', content: contextText || phase1Content }
-        ], undefined, stream);
-        if (isStreamingStarted) res.write(`data: ${JSON.stringify({ status: 'orchestration_complete' })}\n\n`);
-      } catch (e) {
-        console.warn('[Pipeline] Orchestration failed:', e);
-        console.warn('[Pipeline] Orchestration model ID:', config.orchestrationModelId);
-        if (isStreamingStarted) res.write(`data: ${JSON.stringify({ warning: 'Orchestration failed' })}\n\n`);
-      }
-    }
+    // Phase 1-3: Ingesta → Recuperación → Orquestación (contexto RAG)
+    const phases = await runPipelinePhases(config, message, stream, isStreamingStarted
+      ? (payload: Record<string, unknown>) => { res.write(`data: ${JSON.stringify(payload)}\n\n`); }
+      : undefined);
+    const { phase1Content, phase3Content, retrievedChunks, contextText } = phases;
 
     // Phase 4: Generacion Final (L)
     console.log(`[Pipeline] Phase 4: Generation (${config.generationModelId || 'none'}, active: ${config.generationActive !== false})`);
@@ -1445,6 +1478,40 @@ Fase 4 (Generación): ${config.generationModelId || 'Activa'}
     }
   }
 }
+
+// Pipeline context endpoint — devuelve SOLO el contexto RAG (fases 1-3)
+// sin generar la respuesta final, para que el chat (Next.js) pueda combinarlo
+// con tool calls nativas cuando hay una sesión cwd activa.
+app.post('/api/v1/chat/pipeline/context', async (req: Request, res: Response) => {
+  const { message, pipelineConfigId } = req.body;
+  if (!message) return res.status(400).json({ error: 'message is required' });
+
+  try {
+    const pipelineSvc = __zeusCollection(pb, 'pipeline_configs');
+    let config: any;
+    if (pipelineConfigId) {
+      config = await pipelineSvc.getOne(pipelineConfigId);
+    } else {
+      const result = await pipelineSvc.getMany({ filter: { isActive: true }, limit: 1 });
+      const configs = result.records || [];
+      if (configs.length === 0) return res.status(404).json({ error: 'No active pipeline config' });
+      config = configs[0];
+    }
+    if (!config) return res.status(404).json({ error: 'Pipeline config not found' });
+
+    const phases = await runPipelinePhases(config, message, false);
+    res.json({
+      pipeline: { configId: config.id, configName: config.name },
+      contextText: phases.contextText,
+      retrievedChunks: phases.retrievedChunks,
+      phase1Content: phases.phase1Content,
+      phase3Content: phases.phase3Content,
+      chunksCount: phases.retrievedChunks.length,
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
 
 // Pipeline chat endpoint
 app.post('/api/v1/chat/pipeline', async (req: Request, res: Response) => {

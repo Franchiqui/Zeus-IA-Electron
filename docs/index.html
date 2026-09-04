@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zeus IA</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: #e2e8f0;
+            line-height: 1.35;
+        }
+
+        .container {
+            height: 100vh;
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 10px 14px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .logo-section {
+            text-align: center;
+            margin-bottom: 6px;
+            flex-shrink: 0;
+        }
+
+        .logo-section img {
+            max-width: 50px;
+            height: auto;
+            filter: drop-shadow(0 0 18px rgba(99, 102, 241, 0.4));
+        }
+
+        .logo-section h1 {
+            margin-top: 4px;
+            font-size: 1.2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 1px;
+        }
+
+        .content-card {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 14px;
+            padding: 10px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .content-card h2 {
+            color: #a78bfa;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin: 7px 0 3px;
+            padding-bottom: 3px;
+            border-bottom: 1px solid rgba(167, 139, 250, 0.3);
+            flex-shrink: 0;
+        }
+
+        .content-card h2:first-of-type {
+            margin-top: 0;
+        }
+
+        .content-card h3 {
+            color: #818cf8;
+            font-size: 0.65rem;
+            font-weight: 600;
+            margin: 4px 0 1px;
+            flex-shrink: 0;
+        }
+
+        .content-card p {
+            color: #cbd5e1;
+            font-size: 0.62rem;
+            margin-bottom: 6px;
+        }
+
+        .content-card table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 6px 0;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            overflow: hidden;
+            font-size: 0.6rem;
+            flex-shrink: 0;
+        }
+
+        .content-card th {
+            background: rgba(99, 102, 241, 0.2);
+            color: #a78bfa;
+            padding: 3px 5px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.58rem;
+        }
+
+        .content-card td {
+            padding: 2px 5px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            color: #cbd5e1;
+            font-size: 0.56rem;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 1px 5px;
+            background: rgba(34, 197, 94, 0.2);
+            color: #4ade80;
+            border-radius: 10px;
+            font-size: 0.56rem;
+            font-weight: 500;
+        }
+
+        hr {
+            border: none;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            margin: 6px 0;
+            flex-shrink: 0;
+        }
+
+        .content-card ul {
+            list-style: none;
+            padding: 0;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .content-card li {
+            padding: 1px 0 1px 14px;
+            position: relative;
+            color: #cbd5e1;
+            font-size: 0.6rem;
+        }
+
+        .content-card li::before {
+            content: "▸";
+            position: absolute;
+            left: 1px;
+            color: #818cf8;
+            font-weight: bold;
+            font-size: 0.6rem;
+            top: 0px;
+        }
+
+        .content-card code {
+            background: rgba(139, 92, 246, 0.15);
+            color: #c084fc;
+            padding: 0px 3px;
+            border-radius: 4px;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.55rem;
+        }
+
+        .block {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            padding: 6px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .main-grid {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto auto;
+            gap: 7px;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        .block h2 {
+            color: #a78bfa;
+            font-size: 0.72rem;
+            font-weight: 600;
+            margin: 0 0 3px;
+            padding-bottom: 3px;
+            border-bottom: 1px solid rgba(167, 139, 250, 0.3);
+            flex-shrink: 0;
+        }
+
+        .block h3 {
+            color: #818cf8;
+            font-size: 0.62rem;
+            font-weight: 600;
+            margin: 3px 0 1px;
+            flex-shrink: 0;
+        }
+
+        .block table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.58rem;
+            flex-shrink: 0;
+        }
+
+        .block th, .block td {
+            padding: 2px 4px;
+            font-size: 0.56rem;
+        }
+
+        .block ul {
+            list-style: none;
+            padding: 0;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .block li {
+            padding: 1px 0 1px 12px;
+            font-size: 0.58rem;
+            color: #cbd5e1;
+            position: relative;
+        }
+
+        .block li::before {
+            content: "▸";
+            position: absolute;
+            left: 1px;
+            color: #818cf8;
+            font-size: 0.58rem;
+            font-weight: bold;
+            top: 0px;
+        }
+
+        .bottom {
+            flex-shrink: 0;
+            text-align: center;
+            font-size: 0.58rem;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo-section">
+            <img src="LOGO_ZEUS.png" alt="Logo Zeus IA">
+            <h1>Zeus IA</h1>
+        </div>
+
+        <div class="content-card">
+            <h2>🖥️ Sistema en ejecución</h2>
+            <p>Entorno completo de desarrollo:</p>
+
+            <div class="main-grid">
+                <div class="block">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Componente</th>
+                                <th>Puerto</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Next.js App</td><td>8741</td><td><span class="status-badge">Activo</span></td></tr>
+                            <tr><td>Express API</td><td>8742</td><td><span class="status-badge">Activo</span></td></tr>
+                            <tr><td>WebSocket Terminal</td><td>3351</td><td><span class="status-badge">Activo</span></td></tr>
+                            <tr><td>PocketBase (DB+Auth)</td><td>8091</td><td><span class="status-badge">Activo</span></td></tr>
+                            <tr><td>Panel Central</td><td>8743</td><td><span class="status-badge">Activo</span></td></tr>
+                            <tr><td>App Preview</td><td>8744</td><td><span class="status-badge">Activo</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="block">
+                    <h2>🎯 Capacidades disponibles</h2>
+                    <h3>1. Chat con IA (HP-1)</h3>
+                    <ul>
+                        <li>Selector de modelos: OpenAI / Deepseek / Ollama / LM Studio</li>
+                        <li>Persistencia de conversaciones en PocketBase</li>
+                        <li>Integración con pipelines externos</li>
+                    </ul>
+                </div>
+
+                <div class="block">
+                    <h3>2. Gestión de archivos</h3>
+                    <ul>
+                        <li>Explorador con soporte para rutas profundas</li>
+                        <li>Operaciones CRUD completas</li>
+                        <li>Integración con PocketBase (<code>file_path</code>, <code>projects</code>)</li>
+                    </ul>
+                    <h3>3. Git local (HP-8)</h3>
+                    <ul>
+                        <li>Detección automática de repositorios</li>
+                        <li>Operaciones: init, add, commit, push, pull, checkout</li>
+                        <li>Diff inline y historial de commits</li>
+                    </ul>
+                    <h3>4. Modelos IA personalizados (HP-7)</h3>
+                    <ul>
+                        <li>Registro de modelos en <code>ai_models</code></li>
+                        <li>Configuración de endpoints y API keys</li>
+                        <li>Tipado: remote / local</li>
+                    </ul>
+                    <h3>5. Temas personalizados</h3>
+                    <ul>
+                        <li>Tabla <code>zeus_themes</code> con colores JSON</li>
+                        <li>Votaciones y calificaciones</li>
+                        <li>Selector en UI superior</li>
+                    </ul>
+                </div>
+
+                <div class="block">
+                    <h2>📋 Bases de datos en PocketBase</h2>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Tabla</th>
+                                <th>Descripción</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>users</code></td><td>Usuarios autenticados</td></tr>
+                            <tr><td><code>ai_models</code></td><td>Modelos IA registrados</td></tr>
+                            <tr><td><code>conversations</code></td><td>Historial de chats</td></tr>
+                            <tr><td><code>messages</code></td><td>Mensajes individuales</td></tr>
+                            <tr><td><code>projects</code></td><td>Proyectos generados</td></tr>
+                            <tr><td><code>pipeline_configs</code></td><td>Configuración de pipelines</td></tr>
+                            <tr><td><code>zeus_themes</code></td><td>Temas de UI</td></tr>
+                            <tr><td><code>theme_votes</code></td><td>Votaciones de temas</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <hr>
+
+            <h2>💬 ¿En qué puedo ayudarte?</h2>
+            <ul>
+                <li><strong>Desarrollo de código</strong> (React, Next.js, Node.js, TypeScript)</li>
+                <li><strong>Configuración del sistema</strong> (puertos, APIs, bases de datos)</li>
+                <li><strong>Gestión de archivos y proyectos</strong></li>
+                <li><strong>Integración con modelos de IA</strong></li>
+                <li><strong>Cualquier otra tarea</strong> que tengas en mente</li>
+            </ul>
+
+            <p class="bottom">¡Dime qué necesitas y comenzaré a trabajar en ello! 🚀</p>
+        </div>
+    </div>
+</body>
+</html>

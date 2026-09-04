@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useProject } from './ProjectContext';
 import { useTabState } from '@/lib/tab-state';
+import { sessionFetch } from '@/lib/projectStore';
 
 type TerminalMessage = {
   type: 'input' | 'output' | 'error' | 'status' | 'info' | 'warn' | 'success' | 'ai';
@@ -135,7 +136,7 @@ export function TerminalProvider({
           filesCount: filesToSync.length
         });
 
-        const response = await fetch('/api/sync-project', {
+        const response = await sessionFetch('/api/sync-project', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

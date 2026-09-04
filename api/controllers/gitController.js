@@ -1,8 +1,18 @@
 const { exec, spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const { getSessionCwd } = require('../middleware/sessionCwd');
 
-const getDataDir = () => require('../config').DATA_DIR;
+const getDataDir = (req) => getSessionCwd(req);
+
+function requireCwd(req, res) {
+  const cwd = getDataDir(req);
+  if (!cwd) {
+    res.status(400).json({ error: 'No hay sesión activa. Selecciona una carpeta de proyecto.' });
+    return null;
+  }
+  return cwd;
+}
 
 // Helper genérico para ejecutar comandos git
 function runGit(cwd, args, timeoutMs = 15000) {
@@ -52,15 +62,14 @@ function runGit(cwd, args, timeoutMs = 15000) {
   });
 }
 
-function resolveProjectDir(subPath) {
-  const dataDir = getDataDir();
-  if (!subPath) return dataDir;
-  return path.join(dataDir, subPath);
+function resolveProjectDir(cwd, subPath) {
+  if (!subPath) return cwd;
+  return path.join(cwd, subPath);
 }
 
-// Busca la raíz del repositorio Git subiendo por los directorios padre (dentro de DATA_DIR)
-function resolveGitDir(subPath) {
-  const dataDir = path.normalize(getDataDir());
+// Busca la raíz del repositorio Git subiendo por los directorios padre (dentro del cwd de sesión)
+function resolveGitDir(cwd, subPath) {
+  const dataDir = path.normalize(cwd);
   const start = subPath ? path.join(dataDir, subPath) : dataDir;
   let dir = path.normalize(start);
   while (dir.startsWith(dataDir)) {
@@ -76,11 +85,12 @@ const gitController = {
   // GET /api/git/is-repo
   isRepo: async (req, res) => {
     try {
-      const startDir = resolveProjectDir(req.query.path);
-      const gitRoot = resolveGitDir(req.query.path);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const startDir = resolveProjectDir(cwd, req.query.path);
+      const gitRoot = resolveGitDir(cwd, req.query.path);
       const isRepo = fs.existsSync(path.join(gitRoot, '.git'));
-      // Devolver la ruta raíz del repo relativa a DATA_DIR para que el frontend pueda sincronizarse
-      const relativeGitRoot = path.relative(getDataDir(), gitRoot).replace(/\\/g, '/');
+      // Devolver la ruta raíz del repo relativa al cwd de sesión para que el frontend pueda sincronizarse
+      const relativeGitRoot = path.relative(cwd, gitRoot).replace(/\\/g, '/');
       res.json({ isRepo, gitRoot: isRepo ? relativeGitRoot : null });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -90,7 +100,8 @@ const gitController = {
   // GET /api/git/status
   status: async (req, res) => {
     try {
-      const projectDir = resolveGitDir(req.query.path);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const projectDir = resolveGitDir(cwd, req.query.path);
 
       // Verificar que es repo git
       if (!fs.existsSync(path.join(projectDir, '.git'))) {
@@ -174,7 +185,8 @@ const gitController = {
   // GET /api/git/log
   log: async (req, res) => {
     try {
-      const projectDir = resolveGitDir(req.query.path);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const projectDir = resolveGitDir(cwd, req.query.path);
       const limit = Math.min(parseInt(req.query.limit || '20', 10), 100);
       const format = '%H|%s|%an|%ad|%ae';
       const output = await runGit(projectDir, ['log', `-${limit}`, '--format=' + format, '--date=short']);
@@ -198,7 +210,8 @@ const gitController = {
   // GET /api/git/branches
   branches: async (req, res) => {
     try {
-      const projectDir = resolveGitDir(req.query.path);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const projectDir = resolveGitDir(cwd, req.query.path);
       const output = await runGit(projectDir, ['branch', '-a', '--format=%(refname:short)%(if)%(HEAD)%(then)*%(end)']);
       const lines = output.split('\n').filter(Boolean);
       const current = lines.find(l => l.endsWith('*'))?.replace('*', '') || '';
@@ -212,7 +225,8 @@ const gitController = {
   // GET /api/git/diff
   diff: async (req, res) => {
     try {
-      const projectDir = resolveGitDir(req.query.path);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const projectDir = resolveGitDir(cwd, req.query.path);
       const file = req.query.file;
       const staged = req.query.staged === 'true';
       const args = staged ? ['diff', '--cached', '--', file] : ['diff', '--', file];
@@ -226,7 +240,8 @@ const gitController = {
   // POST /api/git/add
   add: async (req, res) => {
     try {
-      const projectDir = resolveGitDir(req.body.path);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const projectDir = resolveGitDir(cwd, req.body.path);
       const files = Array.isArray(req.body.files) ? req.body.files : [req.body.files];
       await runGit(projectDir, ['add', ...files]);
       res.json({ success: true });
@@ -238,7 +253,8 @@ const gitController = {
   // POST /api/git/unstage
   unstage: async (req, res) => {
     try {
-      const projectDir = resolveGitDir(req.body.path);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const projectDir = resolveGitDir(cwd, req.body.path);
       const files = Array.isArray(req.body.files) ? req.body.files : [req.body.files];
       await runGit(projectDir, ['restore', '--staged', ...files]);
       res.json({ success: true });
@@ -250,7 +266,8 @@ const gitController = {
   // POST /api/git/commit
   commit: async (req, res) => {
     try {
-      const projectDir = resolveGitDir(req.body.path);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const projectDir = resolveGitDir(cwd, req.body.path);
       const { message } = req.body;
       if (!message || !message.trim()) {
         return res.status(400).json({ error: 'El mensaje de commit es obligatorio' });
@@ -265,7 +282,8 @@ const gitController = {
   // POST /api/git/push
   push: async (req, res) => {
     try {
-      const projectDir = resolveGitDir(req.body.path);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const projectDir = resolveGitDir(cwd, req.body.path);
       const branch = req.body.branch || 'HEAD';
       const output = await runGit(projectDir, ['push', 'origin', branch]);
       res.json({ success: true, output });
@@ -277,7 +295,8 @@ const gitController = {
   // POST /api/git/pull
   pull: async (req, res) => {
     try {
-      const projectDir = resolveGitDir(req.body.path);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const projectDir = resolveGitDir(cwd, req.body.path);
       const output = await runGit(projectDir, ['pull']);
       res.json({ success: true, output });
     } catch (error) {
@@ -288,7 +307,8 @@ const gitController = {
   // POST /api/git/checkout
   checkout: async (req, res) => {
     try {
-      const projectDir = resolveGitDir(req.body.path);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const projectDir = resolveGitDir(cwd, req.body.path);
       const { branch } = req.body;
       await runGit(projectDir, ['checkout', branch]);
       res.json({ success: true });
@@ -300,7 +320,8 @@ const gitController = {
   // POST /api/git/branch
   createBranch: async (req, res) => {
     try {
-      const projectDir = resolveGitDir(req.body.path);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const projectDir = resolveGitDir(cwd, req.body.path);
       const { name } = req.body;
       await runGit(projectDir, ['checkout', '-b', name]);
       res.json({ success: true });
@@ -312,7 +333,8 @@ const gitController = {
   // POST /api/git/init
   init: async (req, res) => {
     try {
-      const projectDir = resolveProjectDir(req.body.path);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const projectDir = resolveProjectDir(cwd, req.body.path);
       await runGit(projectDir, ['init']);
       res.json({ success: true });
     } catch (error) {
@@ -323,7 +345,8 @@ const gitController = {
   // GET /api/git/remote-url
   remoteUrl: async (req, res) => {
     try {
-      const projectDir = resolveGitDir(req.query.path);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const projectDir = resolveGitDir(cwd, req.query.path);
       const url = await runGit(projectDir, ['remote', 'get-url', 'origin']).catch(() => null);
       res.json({ url });
     } catch (error) {
@@ -334,7 +357,8 @@ const gitController = {
   // POST /api/git/config
   setConfig: async (req, res) => {
     try {
-      const projectDir = resolveGitDir(req.body.path);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const projectDir = resolveGitDir(cwd, req.body.path);
       const { name, email } = req.body;
       if (name) await runGit(projectDir, ['config', 'user.name', name]);
       if (email) await runGit(projectDir, ['config', 'user.email', email]);

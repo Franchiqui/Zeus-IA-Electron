@@ -19,6 +19,7 @@ import { getPocketBase } from '../../lib/pocketbase';
 import { generateZeusIconScript } from '../../lib/zeus-icon-script-template';
 import { iconPaths } from '../../lib/zeus-icon-paths';
 import JSZip from 'jszip';
+import { sessionFetch } from '@/lib/projectStore';
 
 // Declaración para extender el objeto Window
 declare global {
@@ -359,7 +360,7 @@ export default function zeusStudio() {
             if (user?.token && !authLoading && tunnelUrl) {
                 console.log('[main-studio] 🔄 Intentando obtener URL actual del túnel desde la API...');
                 // Hacer la petición de forma asíncrona sin bloquear
-                fetch('/api/tunnel-url', {
+                sessionFetch('/api/tunnel-url', {
                     method: 'GET',
                     headers: {
                         'Authorization': `Bearer ${user.token}`,
@@ -618,7 +619,7 @@ export default function zeusStudio() {
             toast.info('Cargando proyecto desde DATA_PATH...');
 
             // 1. Obtener DATA_PATH
-            const response = await fetch('/api/config/data-path');
+            const response = await sessionFetch('/api/config/data-path');
             const data = await response.json();
             const dataPath = data.dataPath;
 
@@ -628,7 +629,7 @@ export default function zeusStudio() {
             }
 
             // 2. Listar archivos del proyecto (raíz)
-            const filesResponse = await fetch(`http://localhost:8742/api/files?path=`);
+            const filesResponse = await sessionFetch(`http://localhost:8742/api/files?path=`);
             const filesData = await filesResponse.json();
 
             if (!filesData.files || filesData.files.length === 0) {
@@ -683,7 +684,7 @@ export default function zeusStudio() {
             const exploreFolderRecursively = async (folderPath: string) => {
                 try {
                     // Obtener archivos de la carpeta actual
-                    const subFilesResponse = await fetch(`http://localhost:8742/api/files?path=${encodeURIComponent(folderPath)}`);
+                    const subFilesResponse = await sessionFetch(`http://localhost:8742/api/files?path=${encodeURIComponent(folderPath)}`);
                     const subFilesData = await subFilesResponse.json();
 
                     if (subFilesData.files && subFilesData.files.length > 0) {
@@ -696,7 +697,7 @@ export default function zeusStudio() {
                     }
 
                     // Obtener subcarpetas y explorar recursivamente
-                    const subFoldersResponse = await fetch(`http://localhost:8742/api/folders?path=${encodeURIComponent(folderPath)}`);
+                    const subFoldersResponse = await sessionFetch(`http://localhost:8742/api/folders?path=${encodeURIComponent(folderPath)}`);
                     const subFoldersData = await subFoldersResponse.json();
 
                     if (subFoldersData.folders && subFoldersData.folders.length > 0) {
@@ -729,7 +730,7 @@ export default function zeusStudio() {
             // 6. Desplegar el servidor de desarrollo para que el preview funcione
             try {
                 toast.info('Iniciando servidor de desarrollo...');
-                const deployResponse = await fetch('/api/run-project-dev', {
+                const deployResponse = await sessionFetch('/api/run-project-dev', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ projectPath: dataPath, port: 3000 })
@@ -2034,7 +2035,7 @@ export default function zeusStudio() {
                             }
                         }
 
-                        const saveResponse = await fetch('/api/save-file', {
+                        const saveResponse = await sessionFetch('/api/save-file', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({

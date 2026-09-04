@@ -2,11 +2,19 @@ const fs = require('fs-extra');
 const path = require('path');
 
 const { saveTaskToPlan } = require('./planController');
+const { getSessionCwd } = require('../middleware/sessionCwd');
 
-// getDataDir - Lee DATA_PATH desde .env en tiempo real para detectar cambios
-const getDataDir = () => {
-  // Acceder dinámicamente a DATA_DIR para que siempre lea el .env actual
-  return require('../config').DATA_DIR;
+// El cwd se ancla por sesión (header X-Zeus-Session), no a un DATA_PATH global.
+const getDataDir = (req) => getSessionCwd(req);
+
+// Garantiza que haya sesión activa; devuelve el cwd o responde 400.
+const requireCwd = (req, res) => {
+  const cwd = getDataDir(req);
+  if (!cwd) {
+    res.status(400).json({ error: 'No hay sesión activa. Selecciona una carpeta de proyecto.' });
+    return null;
+  }
+  return cwd;
 };
 
 const folderController = {
@@ -35,8 +43,10 @@ const folderController = {
       }
     }
     
-    const fullPath = path.join(getDataDir(), folderPath, name);
-    
+    const cwd = requireCwd(req, res);
+    if (!cwd) return;
+    const fullPath = path.join(cwd, folderPath, name);
+
     try {
       await fs.ensureDir(fullPath);
       res.status(201).json({ 
@@ -53,7 +63,9 @@ const folderController = {
   // Listar carpetas
   listFolders: async (req, res) => {
     const { path: folderPath } = req.query;
-    const fullPath = path.join(getDataDir(), folderPath || '');
+    const cwd = requireCwd(req, res);
+    if (!cwd) return;
+    const fullPath = path.join(cwd, folderPath || '');
     
     try {
       const exists = await fs.pathExists(fullPath);
@@ -111,8 +123,10 @@ const folderController = {
       }
     }
     
-    const oldPath = path.join(getDataDir(), folderPath, name);
-    const newPath = path.join(getDataDir(), folderPath, newName);
+    const cwd = requireCwd(req, res);
+    if (!cwd) return;
+    const oldPath = path.join(cwd, folderPath, name);
+    const newPath = path.join(cwd, folderPath, newName);
     
     try {
       const exists = await fs.pathExists(oldPath);
@@ -155,14 +169,16 @@ const folderController = {
       }
     }
     
-    const fullPath = path.join(getDataDir(), folderPath, name);
-    
+    const cwd = requireCwd(req, res);
+    if (!cwd) return;
+    const fullPath = path.join(cwd, folderPath, name);
+
     try {
       const exists = await fs.pathExists(fullPath);
       if (!exists) {
         return res.status(404).json({ error: 'Carpeta no encontrada' });
       }
-      
+
       await fs.remove(fullPath);
       res.json({ 
         success: true, 

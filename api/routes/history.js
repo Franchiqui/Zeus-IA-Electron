@@ -1,15 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const path = require('path');
-const { DATA_DIR } = require('../config');
+const { getSessionCwd } = require('../middleware/sessionCwd');
 const historyController = require('../controllers/historyController');
 
 // Obtener historial de un archivo
 router.get('/files/:name/history', async (req, res) => {
   const { name } = req.params;
   const { path: folderPath } = req.query;
-  const fullPath = folderPath ? path.join(DATA_DIR, folderPath, name) : null;
-  
+  const cwd = getSessionCwd(req);
+  if (!cwd) return res.status(400).json({ error: 'No hay sesión activa. Selecciona una carpeta de proyecto.' });
+  const fullPath = folderPath ? path.join(cwd, folderPath, name) : null;
+
   try {
     const history = await historyController.getHistory(name, fullPath);
     res.json({
@@ -28,8 +30,10 @@ router.get('/files/:name/history', async (req, res) => {
 router.post('/files/:name/undo', async (req, res) => {
   const { name } = req.params;
   const { path: folderPath } = req.body;
-  const fullPath = path.join(DATA_DIR, folderPath || '', name);
-  
+  const cwd = getSessionCwd(req);
+  if (!cwd) return res.status(400).json({ error: 'No hay sesión activa. Selecciona una carpeta de proyecto.' });
+  const fullPath = path.join(cwd, folderPath || '', name);
+
   try {
     const result = await historyController.undoLastChange(name, fullPath);
     res.json(result);

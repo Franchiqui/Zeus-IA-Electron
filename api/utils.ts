@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
+import { getBaseDataPath } from '@/lib/env';
 
 // Mock de UsageService para evitar errores de facturación
 export const UsageService = {
@@ -32,18 +33,30 @@ function readDataPathFromEnv(): string | null {
   return null;
 }
 
-// Resolver la ruta del proyecto basándose en DATA_PATH
-// DATA_PATH es siempre la raíz directa de la aplicación actual, sin subcarpetas.
+// Resolver la ruta del proyecto basándose en el cwd de la sesión activa
+// (header X-Zeus-Session, resuelto vía Express). DATA_PATH solo como fallback heredado.
+// El cwd es siempre la raíz directa de la aplicación/proyecto actual, sin subcarpetas.
 export async function getProjectRoot(_projectId?: string, currentRoot?: string): Promise<string> {
-    const dataPath = readDataPathFromEnv() || process.env.DATA_PATH;
-    const baseDataPath = dataPath
-      ? path.normalize(path.isAbsolute(dataPath) ? dataPath : path.resolve(process.cwd(), dataPath))
-      : path.join(process.cwd(), 'data');
+    const baseDataPath = await getBaseDataPath().catch(() => {
+      const dataPath = readDataPathFromEnv() || process.env.DATA_PATH;
+      return dataPath
+        ? path.normalize(path.isAbsolute(dataPath) ? dataPath : path.resolve(process.cwd(), dataPath))
+        : path.join(process.cwd(), 'data');
+    });
 
     if (currentRoot) {
       const resolved = path.normalize(currentRoot);
-      // Solo confiar en currentRoot si está dentro de DATA_PATH
-      if (path.isAbsolute(resolved) && resolved.toLowerCase().startsWith(baseDataPath.toLowerCase())) {
+      const bl = baseDataPath.toLowerCase();
+      const rl = resolved.toLowerCase();
+      const sep = path.sep;
+      // Solo confiar en currentRoot si está dentro del cwd de sesión
+      if (path.isAbsolute(resolved) && (rl === bl || rl.startsWith(bl + sep))) {
+        return resolved;
+      }
+      // Si currentRoot es absoluto pero NO está dentro del cwd, confiar en él
+      // de todas formas — el frontend ya lo validó via /api/project/get-root.
+      // El cwd de sesión puede ser un ancestro (el usuario eligió una subcarpeta).
+      if (path.isAbsolute(resolved)) {
         return resolved;
       }
     }

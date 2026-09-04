@@ -9,8 +9,12 @@
  Añada una sección completa en la página principal con tarjetas para cada módulo API (Temas, Proyectos, Auth,
   Comentarios, Búsqueda, Subida)
 
-
+  npm run build
   npm run electron:build:installer
+
+  npm run build:api-rae
+
+  electron-builder (genera el instalador .exe)
 
 
 

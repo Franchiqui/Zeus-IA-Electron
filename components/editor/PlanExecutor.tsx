@@ -36,6 +36,8 @@ function Switch({
     </button>
   );
 }
+
+import { sessionFetch } from '@/lib/projectStore';
 import {
   initPocketBase,
   isPocketBaseInitialized,
@@ -1044,7 +1046,7 @@ export default function PlanExecutor({
       payload
     );
     try {
-      const res = await fetch('/api/plan-with-model', {
+      const res = await sessionFetch('/api/plan-with-model', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1171,7 +1173,7 @@ export default function PlanExecutor({
         (!effectiveProjectRoot || !effectiveProjectRoot.trim())
       ) {
         try {
-          const rootRes = await fetch('/api/project/get-root', {
+          const rootRes = await sessionFetch('/api/project/get-root', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1200,7 +1202,7 @@ export default function PlanExecutor({
       }
 
       // 1) Aplica todas las acciones de creación de una vez
-      const res = await fetch('/api/apply-plan', {
+      const res = await sessionFetch('/api/apply-plan', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1447,7 +1449,7 @@ export default function PlanExecutor({
                 console.log(
                   `[PlanExecutor] 🔍 Leyendo archivo del disco: ${normalizedPath}`
                 );
-                const readRes = await fetch('/api/read-file', {
+                const readRes = await sessionFetch('/api/read-file', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -1841,7 +1843,7 @@ export default function PlanExecutor({
             // Obtener contenido actual del archivo
             let currentFileContent = '';
             try {
-              const readRes = await fetch('/api/read-file', {
+              const readRes = await sessionFetch('/api/read-file', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -2002,7 +2004,7 @@ export default function PlanExecutor({
                 partialApplied++;
                 // Leer el archivo actualizado para sincronizar con el editor/explorador
                 try {
-                  const updatedReadRes = await fetch('/api/read-file', {
+                  const updatedReadRes = await sessionFetch('/api/read-file', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -2069,7 +2071,7 @@ export default function PlanExecutor({
         );
         for (const update of fileUpdates) {
           try {
-            const saveRes = await fetch('/api/save-file', {
+            const saveRes = await sessionFetch('/api/save-file', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -2420,7 +2422,7 @@ export default function PlanExecutor({
           });
 
           // Crear backup
-          const backupResponse = await fetch('/api/file-backups/save', {
+          const backupResponse = await sessionFetch('/api/file-backups/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

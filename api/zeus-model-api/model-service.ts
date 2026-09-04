@@ -4,6 +4,11 @@
  * para ser usadas desde Next.js API Routes y el servidor Express.
  */
 
+// Re-export del bucle de tool calls nativas
+export { callModelWithTools, callModelWithToolsDetailed } from './tool-loop';
+export type { ToolLogEntry, ToolLoopResult } from './tool-loop';
+export type { ToolCall, ToolResult, ToolDefinition } from './tools';
+
 import PocketBase from 'pocketbase';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -30,6 +35,7 @@ export type ChatBody = {
   topP?: number;
   frequencyPenalty?: number;
   presencePenalty?: number;
+  cwd?: string;
 };
 
 export type ModelConfig = {
@@ -531,9 +537,57 @@ IMPORTANTE:
 - NO inventes versiones ni datos si puedes buscarlos
 `;
 
-export function getSystemPrompt(isLocalModel: boolean, enableWebSearch: boolean = false): string {
-  const base = isLocalModel ? ZEUS_SYSTEM_PROMPT_SHORT : ZEUS_SYSTEM_PROMPT;
+export function buildCwdSection(cwd?: string): string {
+  if (!cwd) return '';
+  return `## DIRECTORIO DE TRABAJO (cwd)
+Todos los paths de archivos son relativos a: ${cwd}
+Las tool calls (read_file, write_file, list_dir, etc.) operan directamente contra este directorio.
+
+---
+
+`;
+}
+
+// System prompt para modo tool calls nativas (estilo F:\Agent).
+// Se usa cuando el provider soporta tools y hay un cwd de sesión activa.
+const ZEUS_TOOLS_SYSTEM_PROMPT = `Eres Zeus IA, un asistente de desarrollo de software integrado en un IDE.
+
+## DIRECTORIO DE TRABAJO
+Tienes acceso al sistema de archivos del proyecto mediante tool calls nativas. Usa estas tools para leer, escribir y explorar archivos:
+
+- **read_file(path, offset?, limit?)**: Lee un archivo. Devuelve contenido con números de línea. Para archivos grandes, usa offset y limit.
+- **write_file(path, content)**: Crea o sobrescribe un archivo. Crea directorios padre automáticamente.
+- **list_dir(path)**: Lista el contenido de un directorio. Usa "" para la raíz del proyecto.
+- **create_dir(path)**: Crea un directorio.
+- **delete_file(path)**: Elimina un archivo o directorio.
+- **search_files(pattern, path?, glob?)**: Busca texto en archivos (tipo grep).
+- **run_command(command)**: Ejecuta un comando de shell en el directorio del proyecto.
+
+## REGLAS CRÍTICAS
+1. **AUTONOMÍA TOTAL**: NO pidas permiso. EJECUTA directamente. NUNCA preguntes "¿quieres que proceda?" o "¿continúo?".
+2. **Lee antes de escribir**: Si necesitas modificar un archivo, léelo primero con read_file para ver su contenido actual.
+3. **Paths relativos**: Todos los paths son relativos al directorio del proyecto (cwd). NO uses paths absolutos.
+4. **Sé breve**: Responde de forma concisa. No expliques lo que vas a hacer, hazlo.
+5. **Usa search_files** para encontrar código relevante cuando no sepas la ruta exacta.
+
+## FLUJO TÍPICO
+1. list_dir("") para ver la estructura del proyecto
+2. read_file para leer archivos relevantes
+3. write_file para crear o modificar archivos
+4. run_command para instalar dependencias, builds, etc.
+
+No uses [ZEUS_API_CALL] ni [TERMINAL_COMMAND] — usa las tool calls nativas directamente.
+`;
+
+export function getSystemPrompt(isLocalModel: boolean, enableWebSearch: boolean = false, cwd?: string): string {
+  const base = (cwd ? buildCwdSection(cwd) : '') + (isLocalModel ? ZEUS_SYSTEM_PROMPT_SHORT : ZEUS_SYSTEM_PROMPT);
   return enableWebSearch ? base + WEB_SEARCH_INSTRUCTIONS : base;
+}
+
+// System prompt para modo tool calls nativas (estilo F:\Agent).
+export function getToolsSystemPrompt(cwd?: string): string {
+  const cwdSection = cwd ? `## DIRECTORIO DE TRABAJO (cwd)\nTodos los paths son relativos a: ${cwd}\n\n---\n\n` : '';
+  return cwdSection + ZEUS_TOOLS_SYSTEM_PROMPT;
 }
 
 export function buildOpenAIMessages(body: ChatBody, isLocalModel: boolean = false) {
@@ -566,7 +620,7 @@ export function buildOpenAIMessages(body: ChatBody, isLocalModel: boolean = fals
     return { role: 'user' as const, content };
   });
 
-  const systemContext = body.systemContext || getSystemPrompt(isLocalModel, body.webSearch ?? false);
+  const systemContext = body.systemContext || getSystemPrompt(isLocalModel, body.webSearch ?? false, body.cwd);
   if (systemContext) {
     msgs.unshift({ role: 'system', content: systemContext });
   }
@@ -739,20 +793,17 @@ function buildOllamaGeneratePrompt(body: ChatBody): string {
   return parts.join('\n\n');
 }
 
-export async function callOllamaCloud(body: ChatBody, apiUrl: string = 'https://ollama.com/api/generate', apiKey?: string) {
-  const prompt = buildOllamaGeneratePrompt(body);
+export async function callOllamaCloud(body: ChatBody, apiUrl: string = 'https://ollama.com/api/chat', apiKey?: string) {
+  const messages = buildOllamaChatMessages(body);
 
   const payload: Record<string, any> = {
     model: body.model,
-    prompt,
-    stream: false
+    messages,
+    stream: false,
   };
 
-  if (typeof body.temperature === 'number') payload.temperature = body.temperature;
-  if (typeof body.maxTokens === 'number') payload.num_predict = body.maxTokens;
-  if (typeof body.topP === 'number') payload.top_p = body.topP;
-  if (typeof body.frequencyPenalty === 'number') payload.repeat_penalty = body.frequencyPenalty;
-  if (typeof body.presencePenalty === 'number') payload.presence_penalty = body.presencePenalty;
+  const options = buildOllamaOptions(body);
+  if (Object.keys(options).length > 0) payload.options = options;
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
@@ -773,8 +824,8 @@ export async function callOllamaCloud(body: ChatBody, apiUrl: string = 'https://
   }
 
   const data: any = await response.json();
-  // Ollama /api/generate devuelve la respuesta en "response" (string único)
-  const answer = typeof data.response === 'string' ? data.response : data.message?.content ?? data.output?.[0]?.content?.[0]?.text ?? 'Sin respuesta';
+  // /api/chat devuelve la respuesta en data.message.content
+  const answer = data.message?.content ?? (typeof data.response === 'string' ? data.response : 'Sin respuesta');
   return answer;
 }
 

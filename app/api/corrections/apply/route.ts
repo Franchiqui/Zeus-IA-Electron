@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
+import { patchReplace } from '@/utils/fileOps';
 
 interface ApplyCorrectionBody {
   projectRoot: string;
@@ -23,7 +24,6 @@ export async function POST(request: NextRequest) {
       endLine,
       originalCode,
       correctedCode,
-      description,
     } = body;
 
     if (!projectRoot || !filePath || !startLine || !endLine || !originalCode || !correctedCode) {
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Read file
+    // Read file (for backup + conflict reporting).
     let content: string;
     try {
       content = await fs.readFile(targetPath, 'utf8');
@@ -65,59 +65,59 @@ export async function POST(request: NextRequest) {
       console.warn('[apply-correction] No se pudo crear backup:', backupErr);
     }
 
-    // Detect original EOL to preserve it
+    // Compute the current slice in the requested line range, for conflict
+    // reporting if the fuzzy apply can't find the original code.
     const eol = content.includes('\r\n') ? '\r\n' : '\n';
     const lines = content.split(eol);
-
     const startIdx = startLine - 1;
     const endIdx = endLine - 1;
-
-    if (startIdx < 0 || endIdx >= lines.length || startIdx > endIdx) {
-      return NextResponse.json(
-        { error: 'Rango de lineas invalido', totalLines: lines.length },
-        { status: 400 }
-      );
+    let currentSlice = '';
+    if (startIdx >= 0 && endIdx < lines.length && startIdx <= endIdx) {
+      currentSlice = lines.slice(startIdx, endIdx + 1).join(eol);
     }
 
-    // Extract current code in range and normalize for comparison
-    const currentSlice = lines.slice(startIdx, endIdx + 1).join(eol);
-    const normalize = (str: string) =>
-      str.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trimEnd();
+    // Apply the correction using the fuzzy patchReplace (9-strategy chain +
+    // already-applied detection + safe atomic write with BOM/CRLF
+    // preservation, fail-closed syntax gate, sha256 verify, lint-delta).
+    const result = await patchReplace(targetPath, originalCode, correctedCode);
 
-    if (normalize(currentSlice) !== normalize(originalCode)) {
-      return NextResponse.json(
-        {
-          error: 'Conflicto: el codigo original no coincide con el archivo actual.',
-          filePath,
-          startLine,
-          endLine,
-          currentCode: currentSlice,
-          expectedCode: originalCode,
-        },
-        { status: 409 }
-      );
+    if (result.success && !result.noChange) {
+      const correctedLines = correctedCode.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+      return NextResponse.json({
+        success: true,
+        message: 'Correction applied successfully',
+        filePath,
+        linesAffected: correctedLines.length,
+        previousLines: endIdx - startIdx + 1,
+        strategy: result.strategy,
+        diff: result.diff,
+        lint: result.lint,
+      });
     }
 
-    // Apply the correction
-    const correctedLines = correctedCode
-      .replace(/\r\n/g, '\n')
-      .replace(/\r/g, '\n')
-      .split('\n');
-    lines.splice(startIdx, endIdx - startIdx + 1, ...correctedLines);
+    if (result.success && result.noChange) {
+      return NextResponse.json({
+        success: true,
+        message: result.note || 'Correction already applied — no changes made.',
+        filePath,
+        alreadyApplied: true,
+      });
+    }
 
-    // Ensure parent directory exists
-    const dir = path.dirname(targetPath);
-    await fs.mkdir(dir, { recursive: true });
-
-    await fs.writeFile(targetPath, lines.join(eol), 'utf8');
-
-    return NextResponse.json({
-      success: true,
-      message: 'Correction applied successfully',
-      filePath,
-      linesAffected: correctedLines.length,
-      previousLines: endIdx - startIdx + 1,
-    });
+    // No fuzzy match and not already-applied → conflict. Surface the current
+    // vs expected code so the caller can reconcile (preserves the old 409 shape).
+    return NextResponse.json(
+      {
+        error: 'Conflicto: el codigo original no coincide con el archivo actual (ninguna estrategia fuzzy encontro el bloque).',
+        detail: result.error,
+        filePath,
+        startLine,
+        endLine,
+        currentCode: currentSlice,
+        expectedCode: originalCode,
+      },
+      { status: 409 }
+    );
   } catch (error: any) {
     console.error('[apply-correction] Error:', error);
     return NextResponse.json(

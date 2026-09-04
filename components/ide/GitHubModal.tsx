@@ -47,6 +47,7 @@ import {
   Link2Off,
 } from 'lucide-react';
 import { GitHubSvg } from '@/components/ui/github-icon';
+import { sessionFetch } from '@/lib/projectStore';
 
 interface GitHubModalProps {
   isOpen: boolean;
@@ -108,7 +109,7 @@ export default function GitHubModal({ isOpen, onClose, projectPath, onCloneSucce
 
   // Load token, repos and detection cache on mount
   useEffect(() => {
-    const savedToken = localStorage.getItem(LS_TOKEN_KEY);
+    const savedToken = localStorage.getItem(LS_TOKEN_KEY)?.trim();
     if (savedToken) {
       setToken(savedToken);
       validateToken(savedToken);
@@ -159,7 +160,7 @@ export default function GitHubModal({ isOpen, onClose, projectPath, onCloneSucce
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/github/check-linked', {
+        const res = await sessionFetch('/api/github/check-linked', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token, urls: saved.map((r) => r.url) }),
@@ -185,7 +186,7 @@ export default function GitHubModal({ isOpen, onClose, projectPath, onCloneSucce
         // simplemente seguirá con un remote roto pero el panel lo indicará.
         for (const m of missing) {
           try {
-            await fetch('/api/github/remove-remote', {
+            await sessionFetch('/api/github/remove-remote', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ path: projectPath, remoteName: 'origin' }),
@@ -226,15 +227,30 @@ export default function GitHubModal({ isOpen, onClose, projectPath, onCloneSucce
   }, [detectedCache]);
 
   const validateToken = async (t: string) => {
+    const tokenTrim = t.trim();
+    if (!tokenTrim) {
+      setUserInfo(null);
+      return;
+    }
     try {
       const res = await fetch('https://api.github.com/user', {
-        headers: { Authorization: `Bearer ${t}`, Accept: 'application/vnd.github.v3+json' },
+        headers: { Authorization: `Bearer ${tokenTrim}`, Accept: 'application/vnd.github.v3+json' },
       });
       if (res.ok) {
         const data = await res.json();
         setUserInfo({ login: data.login, avatar_url: data.avatar_url });
       } else {
         setUserInfo(null);
+        // 401/403: el token no es válido o ha caducado. Se avisa al usuario
+        // en vez de fallar en silencio y dejar el error solo en consola.
+        if (res.status === 401 || res.status === 403) {
+          toast({
+            title: 'Token de GitHub no válido',
+            description: 'Tu token ha caducado o no tiene permisos. Genéralo de nuevo en github.com y guárdalo.',
+            variant: 'destructive',
+            duration: 6000,
+          });
+        }
       }
     } catch {
       setUserInfo(null);
@@ -277,7 +293,7 @@ export default function GitHubModal({ isOpen, onClose, projectPath, onCloneSucce
     }
     setIsLoading(true);
     try {
-      const res = await fetch('/api/github/create-repo', {
+      const res = await sessionFetch('/api/github/create-repo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -313,7 +329,7 @@ export default function GitHubModal({ isOpen, onClose, projectPath, onCloneSucce
         const pad = (n: number) => String(n).padStart(2, '0');
         const safeMsg = `Init ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
         try {
-          const syncRes = await fetch('/api/github/sync-local', {
+          const syncRes = await sessionFetch('/api/github/sync-local', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path: projectPath, message: safeMsg }),
@@ -356,7 +372,7 @@ export default function GitHubModal({ isOpen, onClose, projectPath, onCloneSucce
     }
     setIsLoading(true);
     try {
-      const res = await fetch('/api/github/update-repo', {
+      const res = await sessionFetch('/api/github/update-repo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, path: projectPath, repoUrl: url }),
@@ -377,7 +393,7 @@ export default function GitHubModal({ isOpen, onClose, projectPath, onCloneSucce
         const pad = (n: number) => String(n).padStart(2, '0');
         const safeMsg = `Sync ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
         try {
-          const syncRes = await fetch('/api/github/sync-local', {
+          const syncRes = await sessionFetch('/api/github/sync-local', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ path: projectPath, message: safeMsg }),
@@ -424,7 +440,7 @@ export default function GitHubModal({ isOpen, onClose, projectPath, onCloneSucce
     }
     setIsLoading(true);
     try {
-      const res = await fetch('/api/github/clone-repo', {
+      const res = await sessionFetch('/api/github/clone-repo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -464,7 +480,7 @@ export default function GitHubModal({ isOpen, onClose, projectPath, onCloneSucce
     if (!confirm(`¿Estás seguro de eliminar el repositorio "${label}" de GitHub?`)) return false;
     setIsLoading(true);
     try {
-      const res = await fetch('/api/github/delete-repo', {
+      const res = await sessionFetch('/api/github/delete-repo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, owner, repo }),

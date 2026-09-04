@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as fsSync from 'fs';
+import { getActiveSessionCwd } from '@/lib/sessionResolve';
 
 export function getApiEnvPath(): string {
   if (process.env.ZEUS_API_ENV_PATH) {
@@ -27,10 +28,40 @@ export function readDataPathFromEnv(): string | null {
   return null;
 }
 
-export function getBaseDataPath(): string {
+// --- Resolución de cwd por sesión ---
+// El anclaje global DATA_PATH quedó obsoleto: el cwd lo define la sesión activa
+// (header X-Zeus-Session), resuelta vía Express. DATA_PATH solo se usa como
+// fallback heredado durante la migración.
+let activeCwdCache: { cwd: string | null; exp: number } | null = null;
+const ACTIVE_CWD_TTL_MS = 5000;
+
+async function resolveActiveCwd(): Promise<string | null> {
+  const now = Date.now();
+  if (activeCwdCache && activeCwdCache.exp > now) return activeCwdCache.cwd;
+  try {
+    const { cwd } = await getActiveSessionCwd();
+    activeCwdCache = { cwd, exp: now + ACTIVE_CWD_TTL_MS };
+    return cwd;
+  } catch {
+    return null;
+  }
+}
+
+/** Invalida la caché del cwd activo (tras cambiar de proyecto/sesión). */
+export function invalidateEnvActiveCwd(): void {
+  activeCwdCache = null;
+}
+
+/**
+ * Devuelve el cwd base: el de la sesión activa, o (fallback heredado) DATA_PATH.
+ * Ahora es asíncrona porque resuelve la sesión contra Express por HTTP.
+ */
+export async function getBaseDataPath(): Promise<string> {
+  const active = await resolveActiveCwd();
+  if (active) return path.normalize(active);
   const dataPath = readDataPathFromEnv() || process.env.DATA_PATH;
   if (!dataPath) {
-    throw new Error('DATA_PATH no configurado');
+    throw new Error('No hay sesión activa y DATA_PATH no configurado');
   }
   return path.normalize(
     path.isAbsolute(dataPath) ? dataPath : path.resolve(process.cwd(), dataPath)
@@ -38,30 +69,28 @@ export function getBaseDataPath(): string {
 }
 
 /**
- * DATA_PATH efectivo para APIs del IDE.
- * - Desarrollo: suele ser `process.cwd()/api/.env`.
- * - Electron empaquetado: `ZEUS_API_ENV_PATH` apunta a `userData/api/.env` (ver electron/main.js).
+ * Cwd efectivo para APIs del IDE (sesión activa o fallback DATA_PATH).
  */
-export function getResolvedDataPathDirectory(): string {
-  return path.resolve(getBaseDataPath());
+export async function getResolvedDataPathDirectory(): Promise<string> {
+  return path.resolve(await getBaseDataPath());
 }
 
 /**
- * Comprueba que la carpeta de trabajo (p. ej. DATA_PATH + subcarpeta del explorador) está bajo DATA_PATH.
+ * Comprueba que la carpeta de trabajo está bajo el cwd de la sesión (o fallback DATA_PATH).
  * Usa path.resolve y el separador del SO para evitar falsos positivos (.../data vs .../dataExtra).
+ * Ahora asíncrona. Si no se proporciona clientProjectRoot, devuelve la base (cwd activo).
  */
-export function resolveAllowedWorkspaceRoot(clientProjectRoot: string):
-  | { ok: true; root: string }
-  | { ok: false; status: number; message: string } {
+export async function resolveAllowedWorkspaceRoot(clientProjectRoot: string):
+  Promise<{ ok: true; root: string } | { ok: false; status: number; message: string }> {
   let resolvedBase: string;
   try {
-    resolvedBase = getResolvedDataPathDirectory();
+    resolvedBase = await getResolvedDataPathDirectory();
   } catch {
-    return { ok: false, status: 500, message: 'DATA_PATH no configurado' };
+    return { ok: false, status: 500, message: 'No hay sesión activa ni DATA_PATH configurado' };
   }
 
   if (!clientProjectRoot || typeof clientProjectRoot !== 'string' || !clientProjectRoot.trim()) {
-    return { ok: false, status: 400, message: 'projectRoot es requerido' };
+    return { ok: true, root: resolvedBase };
   }
 
   const resolvedClient = path.resolve(path.normalize(clientProjectRoot.trim()));
@@ -76,7 +105,7 @@ export function resolveAllowedWorkspaceRoot(clientProjectRoot: string):
       ok: false,
       status: 403,
       message:
-        'La carpeta del proyecto debe estar dentro de DATA_PATH. En Electron, el valor válido es el de api/.env (userData); sincronízalo con la ruta del explorador o guarda de nuevo en configuración.',
+        'La carpeta del proyecto debe estar dentro del cwd de la sesión activa. Selecciona la carpeta de proyecto en el IDE.',
     };
   }
 

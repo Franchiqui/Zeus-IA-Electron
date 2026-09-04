@@ -1,5 +1,6 @@
 const fs = require('fs-extra');
 const path = require('path');
+const { getActiveCwd } = require('../sessionRegistry');
 
 // Ruta absoluta al archivo .env de la API
 const envPath = process.env.ZEUS_API_ENV_PATH
@@ -102,10 +103,18 @@ const configController = {
   },
 
   // Obtener DATA_PATH actual
+  // NOTA: El anclaje global DATA_PATH quedó obsoleto; el cwd ahora se define
+  // por sesión (header X-Zeus-Session). Este endpoint devuelve el cwd de la
+  // sesión activa para mantener compatibilidad con frontend que aún lo consulta.
   getDataPath: async (req, res) => {
     try {
-      // Primero intentar leer directamente del .env
-      let currentPath = readDataPathFromEnv();
+      // Prioridad: cwd de la sesión activa (registro en memoria)
+      let currentPath = getActiveCwd();
+
+      // Fallback heredado: leer del .env (solo durante migración)
+      if (!currentPath) {
+        currentPath = readDataPathFromEnv();
+      }
 
       // Fallback a process.env si no se encontró en .env
       if (!currentPath && process.env.DATA_PATH) {

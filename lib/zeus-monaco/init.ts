@@ -22,23 +22,74 @@ let initPromise: Promise<void> | null = null;
 let initialized = false;
 
 /**
- * Configura el editor worker. En Next.js 16 + Webpack, el worker se importa
- * con el patrón `new URL('...', import.meta.url)` para que
- * monaco-editor-webpack-plugin lo bundle en un chunk separado.
+ * Configura los workers del editor y de lenguajes. En Next.js 16 + Webpack,
+ * los workers se importan con el patrón `new URL('...', import.meta.url)`
+ * para que monaco-editor-webpack-plugin los bundle en chunks separados
+ * (static/*.worker.*.js — ver next.config.js).
+ *
+ * IMPORTANTE: si `getWorker` devuelve `undefined` para un label (p.ej.
+ * 'typescript'), Monaco lanza `Cannot read properties of undefined
+ * (reading 'postMessage')` al intentar crear el language service worker y
+ * la validación TS/JSON/CSS/HTML del editor queda rota silenciosamente.
  */
 function setupMonacoEnvironment(): void {
   if (typeof window === 'undefined') return;
 
-  const editorWorker = new Worker(
-    new URL('monaco-editor/esm/vs/editor/editor.worker', import.meta.url),
-    { type: 'module' },
-  );
+  // Cache de workers por label (el mismo worker se reutiliza para
+  // typescript y javascript, css/scss/less, html/handlebars/razor).
+  const workerCache = new Map<string, Worker>();
+
+  function getOrCreateWorker(label: string): Worker | undefined {
+    const cached = workerCache.get(label);
+    if (cached) return cached;
+
+    let worker: Worker | undefined;
+    switch (label) {
+      case 'editorWorkerService':
+        worker = new Worker(
+          new URL('monaco-editor/esm/vs/editor/editor.worker', import.meta.url),
+          { type: 'module' },
+        );
+        break;
+      case 'typescript':
+      case 'javascript':
+        worker = new Worker(
+          new URL('monaco-editor/esm/vs/language/typescript/ts.worker', import.meta.url),
+          { type: 'module' },
+        );
+        break;
+      case 'json':
+        worker = new Worker(
+          new URL('monaco-editor/esm/vs/language/json/json.worker', import.meta.url),
+          { type: 'module' },
+        );
+        break;
+      case 'css':
+      case 'scss':
+      case 'less':
+        worker = new Worker(
+          new URL('monaco-editor/esm/vs/language/css/css.worker', import.meta.url),
+          { type: 'module' },
+        );
+        break;
+      case 'html':
+      case 'handlebars':
+      case 'razor':
+        worker = new Worker(
+          new URL('monaco-editor/esm/vs/language/html/html.worker', import.meta.url),
+          { type: 'module' },
+        );
+        break;
+      default:
+        return undefined;
+    }
+
+    if (worker) workerCache.set(label, worker);
+    return worker;
+  }
 
   (window as any).MonacoEnvironment = {
-    getWorker: (_moduleId: string, label: string) => {
-      if (label === 'editorWorkerService') return editorWorker;
-      return undefined;
-    },
+    getWorker: (_moduleId: string, label: string) => getOrCreateWorker(label),
   };
 }
 

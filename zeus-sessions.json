@@ -1,0 +1,21 @@
+{
+  "activeSessionId": "417fd806-e3ae-43ef-9225-ab9b1515ccac",
+  "sessions": [
+    [
+      "377d3acc-bb38-4afe-a9ed-9a8953c15f12",
+      {
+        "cwd": "F:\\Editor HTML",
+        "projectId": "vrz1uoemqw7edwv",
+        "createdAt": 1787020517482
+      }
+    ],
+    [
+      "417fd806-e3ae-43ef-9225-ab9b1515ccac",
+      {
+        "cwd": "F:\\Editor HTML",
+        "projectId": "vw6c8flw1k3occm",
+        "createdAt": 1787020598447
+      }
+    ]
+  ]
+}

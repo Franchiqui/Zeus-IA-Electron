@@ -179,14 +179,15 @@ export const useStore = create<AuthState>()(
       }),
       {
         name: 'main-store',
-        version: 2,
-        // Solo persistir los slices serializables
+        version: 3,
+        // Solo persistir los slices serializables.
+        // IMPORTANTE: previewUrl/isPreviewRunning/previewPort NO se persisten:
+        // la URL del preview pertenece al proyecto que la lanzó y a la sesión
+        // actual. Si se persistía, al recargar o abrir otro proyecto la vista
+        // previa seguía renderizando SIEMPRE el mismo proyecto guardado.
         partialize: (state) => ({
           selectedModel: state.selectedModel,
           user: state.user,
-          previewUrl: state.previewUrl,
-          isPreviewRunning: state.isPreviewRunning,
-          previewPort: state.previewPort,
           extensions: {
             installed: state.extensions.installed,
             codeAvailable: state.extensions.codeAvailable,
@@ -207,6 +208,16 @@ export const useStore = create<AuthState>()(
                 codePath: null,
                 codeVersion: null,
               },
+            };
+          }
+          // v3: limpiar el preview persistido de versiones anteriores para que
+          // la vista previa no quede anclada a un proyecto antiguo.
+          if (fromVersion < 3) {
+            return {
+              ...persistedState,
+              previewUrl: null,
+              isPreviewRunning: false,
+              previewPort: 3000,
             };
           }
           return persistedState;

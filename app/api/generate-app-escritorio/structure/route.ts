@@ -2097,15 +2097,11 @@ function createWindow() {
 
 function startNextServer() {
   return new Promise((resolve, reject) => {
-    // En producción, los assets empaquetados están en app.asar, mientras que .next se
-    // desempaqueta en app.asar.unpacked por asarUnpack. Usamos rutas distintas para módulo y build.
-    const baseDir = isDev
-      ? path.join(__dirname, '..')
-      : path.join(process.resourcesPath, 'app');
-    // node_modules y .next están en resources/app cuando asar está desactivado
-    const nextModuleBase = isDev
-      ? path.join(__dirname, '..')
-      : path.join(process.resourcesPath, 'app');
+    // Usamos rutas relativas a __dirname para localizar la raíz de la app y node_modules.
+    // Esto funciona tanto si asar está activado (resources/app.asar) como si no
+    // (resources/app), ya que Electron resuelve __dirname dentro del paquete en ambos casos.
+    const baseDir = path.join(__dirname, '..');
+    const nextModuleBase = path.join(__dirname, '..');
     try {
       const next = require(path.join(nextModuleBase, 'node_modules', 'next'));
       const nextApp = next({ dev: false, dir: baseDir });

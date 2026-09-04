@@ -1,8 +1,18 @@
 const fs = require('fs-extra');
 const path = require('path');
 const { saveTaskToPlan } = require('./planController');
+const { getSessionCwd } = require('../middleware/sessionCwd');
 
-const getDataDir = () => require('../config').DATA_DIR;
+const getDataDir = (req) => getSessionCwd(req);
+
+function requireCwd(req, res) {
+  const cwd = getSessionCwd(req);
+  if (!cwd) {
+    res.status(400).json({ error: 'No hay sesión activa. Selecciona una carpeta de proyecto.' });
+    return null;
+  }
+  return cwd;
+}
 
 // Store for prepared structure (in production, use Redis or DB)
 let preparedStructure = [];
@@ -90,10 +100,12 @@ const createStructure = async (req, res) => {
 const executeStructure = async (req, res) => {
   try {
     const { planName, saveToPlan } = req.body;
-    
+
+    const cwd = requireCwd(req, res); if (!cwd) return;
+
     if (preparedStructure.length === 0) {
-      return res.status(400).json({ 
-        error: 'No structure prepared. Create structure first.' 
+      return res.status(400).json({
+        error: 'No structure prepared. Create structure first.'
       });
     }
 
@@ -133,7 +145,7 @@ const executeStructure = async (req, res) => {
     for (const item of preparedStructure) {
       console.log(`[EXEC] Creando item: ${item.type} - ${item.name} en ${item.path}`);
       try {
-        const fullPath = path.join(getDataDir(), item.path, item.name);
+        const fullPath = path.join(cwd, item.path, item.name);
         
         if (item.type === 'folder') {
           await fs.ensureDir(fullPath);
@@ -145,7 +157,7 @@ const executeStructure = async (req, res) => {
           });
         } else if (item.type === 'file') {
           const fileName = item.extension ? `${item.name}.${item.extension}` : item.name;
-          const filePath = path.join(getDataDir(), item.path, fileName);
+          const filePath = path.join(cwd, item.path, fileName);
           
           // Ensure directory exists
           await fs.ensureDir(path.dirname(filePath));
@@ -162,19 +174,19 @@ const executeStructure = async (req, res) => {
               sourceResolved = path.resolve(item.sourcePath);
               let sourceExists = await fs.pathExists(sourceResolved);
               
-              // 2. If not found, try relative to getDataDir()
+              // 2. If not found, try relative to the session cwd
               if (!sourceExists) {
-                const dataPathTry = path.join(getDataDir(), item.sourcePath);
+                const dataPathTry = path.join(cwd, item.sourcePath);
                 console.log(`[FILE] No encontrado en raíz, probando en data: ${dataPathTry}`);
                 if (await fs.pathExists(dataPathTry)) {
                   sourceResolved = dataPathTry;
                   sourceExists = true;
                 }
               }
-              
+
               if (!sourceExists) {
                 console.error(`[FILE] Error: no se encontró archivo de origen en ninguna ruta`);
-                throw new Error(`Source file not found in ${item.sourcePath} or ${path.join(getDataDir(), item.sourcePath)}`);
+                throw new Error(`Source file not found in ${item.sourcePath} or ${path.join(cwd, item.sourcePath)}`);
               }
               
               console.log(`[FILE] Archivo de origen encontrado en: ${sourceResolved}`);
@@ -283,11 +295,13 @@ const getStructureTree = async (req, res) => {
 const saveStructureToFile = async (req, res) => {
   try {
     const { structure, name } = req.body;
-    
+
+    const cwd = requireCwd(req, res); if (!cwd) return;
+
     // Si no hay nombre, usamos una marca de tiempo para no sobrescribir
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const fileName = name ? `structure_${name}.json` : `structure_save_${timestamp}.json`;
-    const filePath = path.join(getDataDir(), fileName);
+    const filePath = path.join(cwd, fileName);
     
     await fs.writeJson(filePath, structure, { spaces: 2 });
     
@@ -305,7 +319,8 @@ const saveStructureToFile = async (req, res) => {
 // List saved structures
 const listSavedStructures = async (req, res) => {
   try {
-    const items = await fs.readdir(getDataDir());
+    const cwd = requireCwd(req, res); if (!cwd) return;
+    const items = await fs.readdir(cwd);
     const saves = items
       .filter(item => item.startsWith('structure_') && item.endsWith('.json'))
       .map(item => ({
@@ -327,39 +342,40 @@ const listSavedStructures = async (req, res) => {
 const loadStructureFromFile = async (req, res) => {
   try {
     const { fileName } = req.query;
+    const cwd = requireCwd(req, res); if (!cwd) return;
     // Si no pasan fileName, intentamos cargar el más reciente
     let targetFile = fileName;
-    
+
     if (!targetFile) {
-      const items = await fs.readdir(getDataDir());
+      const items = await fs.readdir(cwd);
       const saves = items
         .filter(item => item.startsWith('structure_') && item.endsWith('.json'))
         .sort((a, b) => b.localeCompare(a));
-      
+
       if (saves.length === 0) {
         return res.status(404).json({ error: 'No save files found' });
       }
       targetFile = saves[0];
     }
 
-    const filePath = path.join(getDataDir(), targetFile);
-    
+    const filePath = path.join(cwd, targetFile);
+
     if (!await fs.pathExists(filePath)) {
       return res.status(404).json({ error: 'Save file not found: ' + targetFile });
     }
-    
+
     const structure = await fs.readJson(filePath);
     preparedStructure = structure;
-    
+
     // Preparar el árbol para la estructura que acabamos de cargar
     createdStructure = structure.map(item => {
-      const fileName = (item.type === 'file' && item.extension) 
-        ? `${item.name}.${item.extension}` 
+      const fileName = (item.type === 'file' && item.extension)
+        ? `${item.name}.${item.extension}`
         : item.name;
       return {
         ...item,
         fileName: fileName,
-        fullPath: path.join(getDataDir(), item.path, fileName),
+        fullPath: path.join(cwd, item.path, fileName),
         status: 'loaded'
       };
     });

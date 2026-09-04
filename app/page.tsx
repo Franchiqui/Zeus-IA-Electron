@@ -92,6 +92,7 @@ import { TerminalProvider } from '@/context/TerminalContext';
 import { EditorProvider } from '@/context/editor-context';
 import { ProjectProvider, useProject } from '@/context/ProjectContext';
 import { clearTabState } from '@/lib/tab-state';
+import { sessionFetch, useProjectStore } from '@/lib/projectStore';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import UserInfo from '@/components/auth/UserInfo';
 import GitHubModal from '@/components/ide/GitHubModal';
@@ -184,6 +185,20 @@ const endpointTestSchema = z.object({
 });
 
 type EndpointTestFormData = z.infer<typeof endpointTestSchema>;
+
+// Mock fonts
+const MOCK_FONTS = [
+  { id: '1', name: 'Inter', family: 'Inter, sans-serif' },
+  { id: '2', name: 'Roboto', family: 'Roboto, sans-serif' },
+  { id: '3', name: 'Open Sans', family: 'Open Sans, sans-serif' },
+  { id: '4', name: 'Lato', family: 'Lato, sans-serif' },
+  { id: '5', name: 'Source Sans Pro', family: 'Source Sans Pro, sans-serif' },
+  { id: '6', name: 'Nunito', family: 'Nunito, sans-serif' },
+  { id: '7', name: 'Montserrat', family: 'Montserrat, sans-serif' },
+  { id: '8', name: 'Playfair Display', family: 'Playfair Display, serif' },
+  { id: '9', name: 'Merriweather', family: 'Merriweather, serif' },
+  { id: '10', name: 'Georgia', family: 'Georgia, serif' },
+];
 
 // Mock data for endpoints
 const mockEndpoints: ApiEndpoint[] = [
@@ -855,6 +870,23 @@ export default function APIFileCommander() {
     initialize();
   }, [initStore, fetchModels]);
 
+  // Sincronizar el indicador "Proyecto activo en el IDE" del panel de vista
+  // previa (serve/public/index.html) con el proyecto activo real. El panel lee
+  // ZEUS_DATA_PATH + zeus_current_explorer_path de localStorage cada 2s; si no
+  // se actualizan al cambiar de proyecto, se queda mostrando SIEMPRE el
+  // proyecto anterior (p. ej. "F:/Edit Mi Fuente").
+  const activeCwd = useProjectStore((s) => s.activeCwd);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    // Solo escribir cuando hay proyecto activo: con null no se toca la clave
+    // para no interferir con la migración legacy de projectStore.ts (que lee
+    // ZEUS_DATA_PATH al arrancar sin proyecto activo).
+    if (!activeCwd) return;
+    const normalized = activeCwd.replace(/\\/g, '/').replace(/\/+$/, '');
+    localStorage.setItem('ZEUS_DATA_PATH', normalized);
+    localStorage.setItem('zeus_current_explorer_path', '');
+  }, [activeCwd]);
+
   // Listen for Lucide icon toggle from theme editor
   useEffect(() => {
     const saved = localStorage.getItem('zeus-use-lucide-icons') === 'true';
@@ -906,6 +938,9 @@ export default function APIFileCommander() {
       projectName: ''
     }
   ]);
+
+  // Font state
+  const [font, setFont] = useState<string>('');
   const [activeAppTab, setActiveAppTab] = useState('1');
 
   // Get current tab data (with defaults for backward compatibility)
@@ -1149,6 +1184,30 @@ export default function APIFileCommander() {
   const tabsScrollRef = useRef<HTMLDivElement>(null);
   const [useLucideIcons, setUseLucideIcons] = useState(false);
 
+  // Al montar, calcular el ancho inicial del chat sumando la columna de
+  // puntos finales (sidebar izquierdo, w-64) + el explorador de archivos de
+  // la pestaña IDE (#ide-file-explorer). Si no se pueden medir todavía
+  // (pestañas aún no montadas), se aumenta el default 400 en un 50% (600).
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      try {
+        const sidebarEl = document.getElementById('sidebar-endpoints');
+        const explorerEl = document.getElementById('ide-file-explorer');
+        const sidebarW = sidebarEl?.getBoundingClientRect().width ?? 256; // w-64
+        const explorerW = explorerEl?.getBoundingClientRect().width ?? 300; // explorerWidth default
+        const computed = Math.round(sidebarW + explorerW);
+        if (computed >= 400) {
+          setChatWidth(computed);
+        } else {
+          setChatWidth(600); // fallback: 400 + 50% = 600
+        }
+      } catch {
+        setChatWidth(600); // fallback: mitad más del default (400 + 200)
+      }
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, []);
+
   const startResizing = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsResizingChat(true);
@@ -1290,7 +1349,8 @@ export default function APIFileCommander() {
   const testConnection = useCallback(async () => {
     setConnectionStatus('testing');
     try {
-      const response = await fetch('http://localhost:8742/api/folders');
+      // /api/health no requiere sesión — usa fetch directo (sin sessionFetch).
+      const response = await fetch('http://localhost:8742/api/health');
       setConnectionStatus(response.ok ? 'connected' : 'disconnected');
     } catch {
       setConnectionStatus('disconnected');
@@ -1303,7 +1363,7 @@ export default function APIFileCommander() {
 
   const loadSavedList = useCallback(async () => {
     try {
-      const response = await fetch('http://localhost:8742/api/structure/list');
+      const response = await sessionFetch('http://localhost:8742/api/structure/list');
       const result = await response.json();
       if (result.success) setSavedStructures(result.saves);
     } catch (error) {
@@ -1318,7 +1378,7 @@ export default function APIFileCommander() {
   // Load structure tree
   const loadStructureTree = useCallback(async () => {
     try {
-      const response = await fetch('http://localhost:8742/api/structure/tree');
+      const response = await sessionFetch('http://localhost:8742/api/structure/tree');
       const result = await response.json();
 
       if (result.success) {
@@ -1347,7 +1407,7 @@ export default function APIFileCommander() {
   const fetchPlans = useCallback(async () => {
     console.log('🔄 fetchPlans called');
     try {
-      const response = await fetch('http://localhost:8742/api/plans/list');
+      const response = await sessionFetch('http://localhost:8742/api/plans/list');
       console.log('📡 Response status:', response.status);
       console.log('📡 Response headers:', response.headers);
       const result = await response.json();
@@ -1382,7 +1442,7 @@ export default function APIFileCommander() {
   const effectiveProjectRoot = contextProjectRoot || currentPath || dataPath || '';
 
   useEffect(() => {
-    fetch('/api/config/data-path')
+    sessionFetch('/api/config/data-path')
       .then(res => res.json())
       .then(data => { if (data.success) setDataPath(data.dataPath); })
       .catch(() => {});
@@ -1395,7 +1455,7 @@ export default function APIFileCommander() {
     }
     setIsSidebarApiLoading(true);
     try {
-      const res = await fetch('/api/read-file', {
+      const res = await sessionFetch('/api/read-file', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filePath: 'API/zeus-api-config.json', projectRoot: effectiveProjectRoot })
@@ -1476,7 +1536,7 @@ export default function APIFileCommander() {
 
   const handleLoadSavedApi = useCallback(async () => {
     try {
-      const res = await fetch('/api/read-file', {
+      const res = await sessionFetch('/api/read-file', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filePath: 'API/zeus-api-config.json', projectRoot: currentPath || '' })
@@ -1552,8 +1612,8 @@ export default function APIFileCommander() {
     try {
       // Fetch both folders and files
       const [foldersResponse, filesResponse] = await Promise.all([
-        fetch(`http://localhost:8742/api/folders?path=${encodeURIComponent(folderPath)}`),
-        fetch(`http://localhost:8742/api/files?path=${encodeURIComponent(folderPath)}`)
+        sessionFetch(`http://localhost:8742/api/folders?path=${encodeURIComponent(folderPath)}`),
+        sessionFetch(`http://localhost:8742/api/files?path=${encodeURIComponent(folderPath)}`)
       ]);
 
       const foldersResult = await foldersResponse.json();
@@ -1612,8 +1672,8 @@ export default function APIFileCommander() {
       const loadPreviousFolder = async () => {
         try {
           const [foldersResponse, filesResponse] = await Promise.all([
-            fetch(`http://localhost:8742/api/folders?path=${encodeURIComponent(previousPath)}`),
-            fetch(`http://localhost:8742/api/files?path=${encodeURIComponent(previousPath)}`)
+            sessionFetch(`http://localhost:8742/api/folders?path=${encodeURIComponent(previousPath)}`),
+            sessionFetch(`http://localhost:8742/api/files?path=${encodeURIComponent(previousPath)}`)
           ]);
 
           const foldersResult = await foldersResponse.json();
@@ -1683,7 +1743,7 @@ export default function APIFileCommander() {
 
   const executeCreateExplorerFolder = useCallback(async (folderName: string) => {
     try {
-      const response = await fetch('http://localhost:8742/api/folders', {
+      const response = await sessionFetch('http://localhost:8742/api/folders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: folderName.trim(), path: currentPath || '' })
@@ -1709,7 +1769,7 @@ export default function APIFileCommander() {
 
   const executeCreateExplorerFile = useCallback(async (fileName: string) => {
     try {
-      const response = await fetch('http://localhost:8742/api/files', {
+      const response = await sessionFetch('http://localhost:8742/api/files', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: fileName.trim(), path: currentPath || '', content: '' })
@@ -1738,7 +1798,7 @@ export default function APIFileCommander() {
 
     try {
       if (item.type === 'folder') {
-        const response = await fetch(`http://localhost:8742/api/folders/${encodeURIComponent(name)}`, {
+        const response = await sessionFetch(`http://localhost:8742/api/folders/${encodeURIComponent(name)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ newName: newName.trim(), path: parentPath })
@@ -1749,7 +1809,7 @@ export default function APIFileCommander() {
           throw new Error(result?.error || 'No se pudo renombrar la carpeta');
         }
       } else {
-        const response = await fetch(`http://localhost:8742/api/files/${encodeURIComponent(name)}`, {
+        const response = await sessionFetch(`http://localhost:8742/api/files/${encodeURIComponent(name)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ newName: newName.trim(), path: parentPath })
@@ -1790,7 +1850,7 @@ export default function APIFileCommander() {
       // Fallback para modo web
       const { name, parentPath } = splitExplorerItemPath(item.path);
       if (item.type === 'folder') {
-        const response = await fetch(`http://localhost:8742/api/folders/${encodeURIComponent(name)}?path=${encodeURIComponent(parentPath)}`, {
+        const response = await sessionFetch(`http://localhost:8742/api/folders/${encodeURIComponent(name)}?path=${encodeURIComponent(parentPath)}`, {
           method: 'DELETE'
         });
 
@@ -1799,7 +1859,7 @@ export default function APIFileCommander() {
           throw new Error(result?.error || 'No se pudo borrar la carpeta');
         }
       } else {
-        const response = await fetch(`http://localhost:8742/api/files/${encodeURIComponent(name)}?path=${encodeURIComponent(parentPath)}`, {
+        const response = await sessionFetch(`http://localhost:8742/api/files/${encodeURIComponent(name)}?path=${encodeURIComponent(parentPath)}`, {
           method: 'DELETE'
         });
 
@@ -1857,8 +1917,8 @@ export default function APIFileCommander() {
             try {
               console.log('Refrescando carpeta:', targetPath);
               const [foldersResponse, filesResponse] = await Promise.all([
-                fetch(`http://localhost:8742/api/folders?path=${encodeURIComponent(targetPath)}`),
-                fetch(`http://localhost:8742/api/files?path=${encodeURIComponent(targetPath)}`)
+                sessionFetch(`http://localhost:8742/api/folders?path=${encodeURIComponent(targetPath)}`),
+                sessionFetch(`http://localhost:8742/api/files?path=${encodeURIComponent(targetPath)}`)
               ]);
 
               const foldersResult = await foldersResponse.json();
@@ -2049,7 +2109,7 @@ export default function APIFileCommander() {
   const { data: fileSystemData, isLoading: isLoadingFiles } = useQuery({
     queryKey: ['fileSystem', activeAppTab],
     queryFn: async () => {
-      const response = await fetch('http://localhost:8742/api/data');
+      const response = await sessionFetch('http://localhost:8742/api/data');
       if (!response.ok) throw new Error('Failed to fetch file system');
       return response.json();
     }
@@ -2059,7 +2119,7 @@ export default function APIFileCommander() {
   const { data: plansData } = useQuery({
     queryKey: ['plans', activeAppTab],
     queryFn: async () => {
-      const response = await fetch('http://localhost:8742/api/plan');
+      const response = await sessionFetch('http://localhost:8742/api/plan');
       if (!response.ok) throw new Error('Failed to fetch plans');
       return response.json();
     }
@@ -2074,6 +2134,17 @@ export default function APIFileCommander() {
 
     window.addEventListener('refreshPlans', handleRefreshPlans);
     return () => window.removeEventListener('refreshPlans', handleRefreshPlans);
+  }, [queryClient]);
+
+  // Escuchar cambios de proyecto para invalidar todas las queries cacheadas
+  useEffect(() => {
+    const handleProjectChanged = () => {
+      queryClient.invalidateQueries();
+      fetchPlans();
+    };
+
+    window.addEventListener('zeus-project-changed', handleProjectChanged);
+    return () => window.removeEventListener('zeus-project-changed', handleProjectChanged);
   }, [queryClient]);
 
   // Resetear explorador cuando cambia DATA_PATH
@@ -2091,7 +2162,7 @@ export default function APIFileCommander() {
   const { data: tasksData } = useQuery({
     queryKey: ['tasks', activeAppTab],
     queryFn: async () => {
-      const response = await fetch('http://localhost:8742/api/plan/tasks');
+      const response = await sessionFetch('http://localhost:8742/api/plan/tasks');
       if (!response.ok) throw new Error('Failed to fetch tasks');
       return response.json();
     }
@@ -2218,7 +2289,7 @@ export default function APIFileCommander() {
     const fileName = apiResponse.file || (selectedEndpoint.path.match(/\/files\/:(\w+)/)?.[1]);
     if (!fileName) return;
     try {
-      const response = await fetch(`http://localhost:8742/api/files/${fileName}/undo`, { method: 'POST' });
+      const response = await sessionFetch(`http://localhost:8742/api/files/${fileName}/undo`, { method: 'POST' });
       const result = await response.json();
       if (response.ok) setApiResponse(result);
     } catch (error) { }
@@ -2231,7 +2302,7 @@ export default function APIFileCommander() {
     }
 
     try {
-      const response = await fetch(`http://localhost:8742/api/plan/${planName}`, {
+      const response = await sessionFetch(`http://localhost:8742/api/plan/${planName}`, {
         method: 'DELETE'
       });
 
@@ -2276,7 +2347,7 @@ export default function APIFileCommander() {
       body.append('planName', plan.name);
       if (shouldReexecute) body.append('force', 'true');
 
-      const response = await fetch('http://localhost:8742/api/plan/execute', {
+      const response = await sessionFetch('http://localhost:8742/api/plan/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: body.toString(),
@@ -2320,7 +2391,7 @@ export default function APIFileCommander() {
       else body.append('taskName', taskName);
       if (shouldReexecute) body.append('force', 'true');
 
-      const response = await fetch('http://localhost:8742/api/plan/tasks/execute', {
+      const response = await sessionFetch('http://localhost:8742/api/plan/tasks/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: body.toString(),
@@ -2451,7 +2522,7 @@ export default function APIFileCommander() {
                   height={32}
                   className="h-8 w-8 object-contain"
                 />
-                <h1 className="text-xl font-semibold bg-gradient-to-r from-blue-400 to-zeus-orange bg-clip-text text-transparent">
+                <h1 className="text-2xl bg-gradient-to-r from-green-400 to-yellow-400 bg-clip-text text-transparent" style={{ fontFamily: 'var(--font-audiowide)' }}>
                   Zeus IA
                 </h1>
               </div>
@@ -2619,6 +2690,7 @@ export default function APIFileCommander() {
           <AnimatePresence>
             {isSidebarOpen && (
               <motion.aside
+                id="sidebar-endpoints"
                 initial={{ x: -300, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
                 exit={{ x: -300, opacity: 0 }}
@@ -2910,8 +2982,8 @@ export default function APIFileCommander() {
                                 const loadRootFolder = async () => {
                                   try {
                                     const [foldersResponse, filesResponse] = await Promise.all([
-                                      fetch(`http://localhost:8742/api/folders?path=`),
-                                      fetch(`http://localhost:8742/api/files?path=`)
+                                      sessionFetch(`http://localhost:8742/api/folders?path=`),
+                                      sessionFetch(`http://localhost:8742/api/files?path=`)
                                     ]);
 
                                     const foldersResult = await foldersResponse.json();
@@ -3469,16 +3541,16 @@ export default function APIFileCommander() {
                       <div className="flex items-center gap-4">
                         <div className="p-3 bg-success/30 border border-success rounded-xl"><LayoutDashboard className="w-6 h-6 text-success" /></div>
                         <div>
-                          <h2 className="text-xl font-bold text-foreground">Project Blueprint Designer</h2>
-                          <p className="text-sm text-muted-foreground/80 font-medium">Map out your file system architecture before building</p>
+                          <h2 className="text-xl font-bold text-foreground">{t('structureCreatorTitle')}</h2>
+                          <p className="text-sm text-muted-foreground/80 font-medium">{t('structureCreatorSubtitle')}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
                         <button onClick={() => setStructureItems([...structureItems, { type: 'folder', name: '', path: '', content: '', extension: '', sourcePath: '' }])} className="px-5 py-2.5 bg-primary/10 hover:bg-primary text-primary hover:text-foreground rounded-xl font-bold border border-blue-600/20 transition-all flex items-center gap-2 text-sm shadow-xl shadow-blue-900/10">
-                          <Folder className="w-4 h-4" /> New Folder
+                          <Folder className="w-4 h-4" /> {t('structureCreatorNewFolder')}
                         </button>
                         <button onClick={() => setStructureItems([...structureItems, { type: 'file', name: '', path: '', content: '', extension: '', sourcePath: '' }])} className="px-5 py-2.5 bg-success/10 hover:bg-success text-success hover:text-foreground rounded-xl font-bold border border-success/20 transition-all flex items-center gap-2 text-sm shadow-xl shadow-success/10">
-                          <File className="w-4 h-4" /> New File
+                          <File className="w-4 h-4" /> {t('structureCreatorNewFile')}
                         </button>
                       </div>
                     </div>
@@ -3489,22 +3561,22 @@ export default function APIFileCommander() {
                           <div className={cn("absolute left-0 top-0 bottom-0 w-1", item.type === 'folder' ? "bg-primary" : "bg-success")} />
                           <div className="grid grid-cols-1 xl:grid-cols-6 gap-6 items-start">
                             <div className="space-y-1.5">
-                              <label className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest px-1">Type</label>
+                              <label className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest px-1">{t('structureCreatorType')}</label>
                               <div className="relative">
                                 <select value={item.type} onChange={(e) => { const n = [...structureItems]; n[index].type = e.target.value; setStructureItems(n); }} className="w-full bg-background border border-border/80 rounded-xl px-4 py-2.5 text-xs outline-none appearance-none cursor-pointer">
-                                  <option value="folder">FOLDER</option>
-                                  <option value="file">FILE</option>
+                                  <option value="folder">{t('structureCreatorFolderOpt')}</option>
+                                  <option value="file">{t('structureCreatorFileOpt')}</option>
                                 </select>
                                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/60 pointer-events-none" />
                               </div>
                             </div>
                             <div className="xl:col-span-2 space-y-1.5">
-                              <label className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest px-1">Entity Name</label>
-                              <input type="text" value={item.name} onChange={(e) => { const n = [...structureItems]; n[index].name = e.target.value; setStructureItems(n); }} className="w-full bg-background border border-border/80 rounded-xl px-4 py-2.5 text-xs outline-none" placeholder="e.g. project-core" />
+                              <label className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest px-1">{t('structureCreatorEntityName')}</label>
+                              <input type="text" value={item.name} onChange={(e) => { const n = [...structureItems]; n[index].name = e.target.value; setStructureItems(n); }} className="w-full bg-background border border-border/80 rounded-xl px-4 py-2.5 text-xs outline-none" placeholder={t('structureCreatorEntityNamePlaceholder')} />
                             </div>
                             <div className="xl:col-span-2 space-y-1.5">
-                              <label className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest px-1">Virtual Path</label>
-                              <input type="text" value={item.path} onChange={(e) => { const n = [...structureItems]; n[index].path = e.target.value; setStructureItems(n); }} className="w-full bg-background border border-border/80 rounded-xl px-4 py-2.5 text-xs outline-none" placeholder="e.g. /src/internal" />
+                              <label className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest px-1">{t('structureCreatorVirtualPath')}</label>
+                              <input type="text" value={item.path} onChange={(e) => { const n = [...structureItems]; n[index].path = e.target.value; setStructureItems(n); }} className="w-full bg-background border border-border/80 rounded-xl px-4 py-2.5 text-xs outline-none" placeholder={t('structureCreatorVirtualPathPlaceholder')} />
                             </div>
                             <div className="flex justify-end pt-5">
                               <button onClick={() => setStructureItems(structureItems.filter((_, i) => i !== index))} className="p-2.5 bg-destructive/10 hover:bg-destructive text-destructive hover:text-foreground rounded-xl transition-all border border-red-900/20 shadow-lg"><Trash2 className="w-4 h-4" /></button>
@@ -3512,34 +3584,34 @@ export default function APIFileCommander() {
                             {item.type === 'file' && (
                               <div className="xl:col-span-6 grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
                                 <div className="space-y-1.5">
-                                  <label className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest px-1">Extension</label>
-                                  <input type="text" value={item.extension} onChange={(e) => setStructureItems(structureItems.map((it, idx) => idx === index ? { ...it, extension: e.target.value } : it))} className="w-full bg-background border border-border/80 rounded-xl px-4 py-2.5 text-xs outline-none font-mono" placeholder="ts, py, md..." />
+                                  <label className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest px-1">{t('structureCreatorExtension')}</label>
+                                  <input type="text" value={item.extension} onChange={(e) => setStructureItems(structureItems.map((it, idx) => idx === index ? { ...it, extension: e.target.value } : it))} className="w-full bg-background border border-border/80 rounded-xl px-4 py-2.5 text-xs outline-none font-mono" placeholder={t('structureCreatorExtensionPlaceholder')} />
                                 </div>
                                 <div className="md:col-span-2 space-y-3">
                                   <div className="flex items-center justify-between px-1">
-                                    <label className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest">Data Source</label>
+                                    <label className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest">{t('structureCreatorDataSource')}</label>
                                     <div className="flex items-center gap-2 cursor-pointer" onClick={() => setStructureItems(structureItems.map((it, idx) => idx === index ? { ...it, usePocketBase: !it.usePocketBase } : it))}>
                                       <div className={cn("w-6 h-3.5 rounded-full transition-all relative", item.usePocketBase ? "bg-primary" : "bg-card")}>
                                         <div className={cn("absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all shadow-sm", item.usePocketBase ? "left-3" : "left-0.5")} />
                                       </div>
-                                      <span className="text-[10px] font-bold text-muted-foreground/80 uppercase tracking-tighter">Sync PocketBase</span>
+                                      <span className="text-[10px] font-bold text-muted-foreground/80 uppercase tracking-tighter">{t('structureCreatorSyncPocketBase')}</span>
                                     </div>
                                   </div>
                                   {item.usePocketBase ? (
                                     <div className="relative">
                                       <select onChange={(e) => { const r = pocketBaseRecords.find(re => re.id === e.target.value); if (r) setStructureItems(structureItems.map((it, idx) => idx === index ? { ...it, sourcePath: r.ruta, content: r.contenido, name: r.nombre } : it)); }} className="w-full bg-background border border-blue-900/30 rounded-xl px-4 py-2.5 text-xs outline-none appearance-none cursor-pointer">
-                                        <option value="">Map Record...</option>
+                                        <option value="">{t('structureCreatorMapRecord')}</option>
                                         {pocketBaseRecords.map(r => <option key={r.id} value={r.id}>{r.ruta}</option>)}
                                       </select>
                                       <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/60 pointer-events-none" />
                                     </div>
                                   ) : (
-                                    <input type="text" value={item.sourcePath || ''} onChange={(e) => setStructureItems(structureItems.map((it, idx) => idx === index ? { ...it, sourcePath: e.target.value } : it))} className="w-full bg-background border border-border/80 rounded-xl px-4 py-2.5 text-xs outline-none font-mono" placeholder="Local file path mapping (C:/...)" />
+                                    <input type="text" value={item.sourcePath || ''} onChange={(e) => setStructureItems(structureItems.map((it, idx) => idx === index ? { ...it, sourcePath: e.target.value } : it))} className="w-full bg-background border border-border/80 rounded-xl px-4 py-2.5 text-xs outline-none font-mono" placeholder={t('structureCreatorLocalPathPlaceholder')} />
                                   )}
                                 </div>
                                 <div className="xl:col-span-3 space-y-1.5">
-                                  <label className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest px-1">Raw Content</label>
-                                  <textarea value={item.content} onChange={(e) => setStructureItems(structureItems.map((it, idx) => idx === index ? { ...it, content: e.target.value } : it))} className="w-full h-32 bg-background border border-border/80 rounded-xl p-4 text-xs font-mono text-success focus:border-success transition-all outline-none custom-scrollbar" placeholder="// Injected payload content..." disabled={!!item.sourcePath} />
+                                  <label className="text-[10px] font-black text-muted-foreground/60 uppercase tracking-widest px-1">{t('structureCreatorRawContent')}</label>
+                                  <textarea value={item.content} onChange={(e) => setStructureItems(structureItems.map((it, idx) => idx === index ? { ...it, content: e.target.value } : it))} className="w-full h-32 bg-background border border-border/80 rounded-xl p-4 text-xs font-mono text-success focus:border-success transition-all outline-none custom-scrollbar" placeholder={t('structureCreatorRawContentPlaceholder')} disabled={!!item.sourcePath} />
                                 </div>
                               </div>
                             )}
@@ -3549,8 +3621,8 @@ export default function APIFileCommander() {
                     </div>
 
                     <div className="mt-12 flex items-center gap-4">
-                      <button onClick={async () => { try { const res = await fetch('http://localhost:8742/api/structure', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ structure: structureItems }) }); const r = await res.json(); setNotification({ type: r.success ? 'success' : 'error', message: r.success ? 'Blueprint staged for deployment' : 'Blueprint validation failed' }); } catch { } }} className="px-10 py-1.5 bg-success hover:bg-success rounded-xl font-bold flex items-center gap-3 transition-all shadow-xl shadow-success/20 active:scale-95">
-                        <Upload className="w-5 h-5" /> Deploy Blueprint
+                      <button onClick={async () => { try { const res = await sessionFetch('http://localhost:8742/api/structure', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ structure: structureItems }) }); const r = await res.json(); setNotification({ type: r.success ? 'success' : 'error', message: r.success ? t('structureCreatorDeployStaged') : t('structureCreatorDeployFailed') }); } catch { } }} className="px-10 py-1.5 bg-success hover:bg-success rounded-xl font-bold flex items-center gap-3 transition-all shadow-xl shadow-success/20 active:scale-95">
+                        <Upload className="w-5 h-5" /> {t('structureCreatorDeployBtn')}
                       </button>
                     </div>
                   </div>
@@ -4137,7 +4209,7 @@ function ApiProjectInterface({ project, onBack, selectedModel, projectRoot }: { 
         provider: selectedModel[MODELOS_FIELDS.PROVIDER] || '',
       };
 
-      const response = await fetch('/api/generate-api/generate', {
+      const response = await sessionFetch('/api/generate-api/generate', {
         method: 'POST',
         headers: {
           'x-model-config': JSON.stringify(modelConfig),
@@ -4425,7 +4497,7 @@ function ApiProjectInterface({ project, onBack, selectedModel, projectRoot }: { 
       ];
 
       for (const file of files) {
-        const res = await fetch('/api/save-file', {
+        const res = await sessionFetch('/api/save-file', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -4690,7 +4762,7 @@ function ApiProjectInterface({ project, onBack, selectedModel, projectRoot }: { 
           </div>
           <div className="flex-1 overflow-auto p-4">
             {activeTab === 'codigo' && (
-              <div className="h-full bg-background rounded-lg border border-border/50 overflow-hidden">
+              <div className="h-full rounded-lg border border-border/50 overflow-hidden" style={{ backgroundColor: '#030712' }}>
                 <MonacoEditor
                   value={code}
                   onChange={setCode}

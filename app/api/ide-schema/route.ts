@@ -76,7 +76,7 @@ async function buildSchema(dirPath: string, relPath: string): Promise<SchemaItem
 
 export async function GET(request: Request) {
   try {
-    const baseDataPath = getBaseDataPath();
+    const baseDataPath = await getBaseDataPath();
     const { searchParams } = new URL(request.url);
     const relPath = searchParams.get('path') || '';
 

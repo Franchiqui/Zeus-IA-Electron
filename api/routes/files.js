@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const fileController = require('../controllers/fileController');
+const lineController = require('../controllers/lineController');
+const charController = require('../controllers/charController');
 
 /**
  * @swagger
@@ -99,6 +101,45 @@ router.get('/:name', fileController.getFile);
  *         description: Lista de archivos
  */
 router.get('/', fileController.listFiles);
+
+/**
+ * @swagger
+ * /files/*:
+ *   get:
+ *     summary: Ver archivo o listar carpeta por ruta completa (tolerante)
+ *     description: |
+ *       Resuelve la ruta completa enviada en la URL (ej. /api/files/app/page.tsx).
+ *       Si la ruta apunta a un archivo, devuelve su contenido; si apunta a una
+ *       carpeta, devuelve el listado. Pensado para ser tolerante con la IA, que a
+ *       veces envía la ruta completa en la URL en lugar de separar `name` y `path`.
+ *     parameters:
+ *       - in: path
+ *         name: fullPath
+ *         schema:
+ *           type: string
+ *         description: Ruta relativa del archivo o carpeta
+ *     responses:
+ *       200:
+ *         description: Contenido del archivo o listado de la carpeta
+ *       404:
+ *         description: Ruta no encontrada
+ */
+// Catch-all: se registra DESPUÉS de '/:name' para no interferir con él.
+// Atrapa rutas multi-segmento como /api/files/app/page.tsx que la IA envía mal.
+// Rutas de líneas anidadas bajo /files/:name/lines — deben ir ANTES del wildcard /*
+router.get('/:name/lines/list', lineController.listLines);
+router.get('/:name/lines', lineController.getLines);
+router.post('/:name/lines', lineController.insertLines);
+router.put('/:name/lines/:lineNumber', lineController.replaceLines);
+router.delete('/:name/lines/:lineNumber', lineController.deleteLines);
+// Rutas de caracteres anidadas bajo /files/:name/lines/:lineNumber/chars
+router.get('/:name/lines/:lineNumber/chars/list', charController.listChars);
+router.get('/:name/lines/:lineNumber/chars', charController.getChars);
+router.post('/:name/lines/:lineNumber/chars', charController.insertChars);
+router.put('/:name/lines/:lineNumber/chars', charController.replaceChars);
+router.delete('/:name/lines/:lineNumber/chars', charController.deleteChars);
+
+router.get('/*', fileController.resolveByPath);
 
 /**
  * @swagger

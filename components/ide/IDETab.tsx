@@ -47,7 +47,8 @@ import { useToast } from '@/hooks/use-toast';
 import { useEditor } from '@/context/editor-context';
 import { useTerminal } from '@/context/TerminalContext';
 import { useTranslation } from '@/contexts/translation-context';
-import EnvironmentPathSetter from '@/components/EnvironmentPathSetter';
+import ProjectPicker from '@/components/ProjectPicker';
+import { sessionFetch, useProjectStore } from '@/lib/projectStore';
 import PlanExecutorModal from '@/components/modals/PlanExecutorModal';
 import UndoDiffModal from '@/components/modals/UndoDiffModal';
 import GitPanel from './GitPanel';
@@ -142,7 +143,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
   const fetchProjectExplorer = useCallback(async () => {
     if (!currentExplorerPath) return;
     try {
-      const res = await fetch(`/api/ide-files?path=${encodeURIComponent(currentExplorerPath)}&type=all`);
+      const res = await sessionFetch(`/api/ide-files?path=${encodeURIComponent(currentExplorerPath)}&type=all`);
       if (!res.ok) return;
       const data = await res.json();
       if (!data.success) return;
@@ -210,10 +211,10 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
   useEffect(() => {
     return () => {
       if (currentExplorerPath && isPreviewRunning) {
-        const dataPath = (typeof window !== 'undefined' ? localStorage.getItem('ZEUS_DATA_PATH') || '' : '').replace(/\\/g, '/').replace(/\/+$/, '');
+        const dataPath = (useProjectStore.getState().activeCwd || '').replace(/\\/g, '/').replace(/\/+$/, '');
         const projectPath = dataPath + (currentExplorerPath ? '/' + currentExplorerPath.replace(/^\/+/, '') : '');
         if (projectPath) {
-          fetch('/api/run-project-dev', {
+          sessionFetch('/api/run-project-dev', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ projectPath })
@@ -270,6 +271,64 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
       window.removeEventListener('clearEditorFiles', handleClearFiles);
     };
   }, []);
+
+  // ── Refrescar editor + explorador + preview cuando el modelo modifica archivos ──
+  // El chat dispara 'zeus:file-changed' con { paths, tool } cada vez que un tool
+  // (write_file, delete_file, create_dir) se ejecuta con éxito. Aquí recargamos:
+  //  1. El archivo abierto en Monaco si fue modificado
+  //  2. El explorador de archivos (invalidando queries de React Query)
+  //  3. El preview iframe (recargando la URL)
+  useEffect(() => {
+    const handleFileChanged = async (e: Event) => {
+      const detail = (e as CustomEvent).detail as { paths: string[]; tool: string };
+      if (!detail?.paths?.length) return;
+
+      const cwd = (useProjectStore.getState().activeCwd || '').replace(/\\/g, '/').replace(/\/+$/, '');
+      if (!cwd) return;
+
+      // Normalizar los paths modificados a rutas absolutas para comparar
+      const changedAbs = detail.paths.map(p => {
+        const norm = p.replace(/\\/g, '/');
+        return norm.startsWith('/') ? `${cwd}${norm}` : `${cwd}/${norm}`;
+      });
+
+      // 1. Recargar archivos abiertos en el editor que coincidan con los modificados
+      const filesToReload = openFiles.filter(f => {
+        const fNorm = (f.path || '').replace(/\\/g, '/');
+        return changedAbs.some(c => fNorm === c || fNorm.endsWith('/' + detail.paths[0]));
+      });
+
+      for (const file of filesToReload) {
+        try {
+          const fileName = (file.path || '').split(/[\\/]/).pop() || '';
+          const dir = (file.path || '').replace(/[\\/][^\\/]+$/, '');
+          const fileUrl = `http://localhost:8742/api/files/${encodeURIComponent(fileName)}?path=${encodeURIComponent(dir)}`;
+          const response = await sessionFetch(fileUrl);
+          const result = await response.json();
+          if (result?.success && typeof result.content === 'string') {
+            setOpenFiles(prev => prev.map(f =>
+              f.path === file.path ? { ...f, content: result.content } : f
+            ));
+          }
+        } catch (err) {
+          console.warn('[zeus:file-changed] Error recargando archivo:', file.path, err);
+        }
+      }
+
+      // 2. Invalidar queries del explorador (refresca árbol de archivos)
+      try {
+        window.dispatchEvent(new CustomEvent('zeus-project-changed'));
+      } catch {}
+
+      // 3. Recargar preview iframe
+      try {
+        window.dispatchEvent(new CustomEvent('zeus:preview-reload'));
+      } catch {}
+    };
+
+    window.addEventListener('zeus:file-changed', handleFileChanged);
+    return () => window.removeEventListener('zeus:file-changed', handleFileChanged);
+  }, [openFiles, setOpenFiles]);
 
   // Cargar las extensiones instaladas en el host de extensiones AL INICIO,
   // no solo cuando se abre la pestaña Marketplace. Si no, el ThemePicker
@@ -344,7 +403,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
     try {
       // Pedimos el archivo en modo raw: la API devuelve el contenido si existe, o 404.
       // Para el backup, leemos directamente file.zeus-backup usando un fetch "raw" al nombre + ".zeus-backup".
-      const res = await fetch(
+      const res = await sessionFetch(
         `/api/ide-files?path=${encodeURIComponent(parts.folder)}&name=${encodeURIComponent(parts.name + '.zeus-backup')}`
       );
       if (!res.ok) {
@@ -377,7 +436,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
     const parts = getActiveFileParts();
     if (!parts) return;
     try {
-      const res = await fetch('/api/ide-files/undo', {
+      const res = await sessionFetch('/api/ide-files/undo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: parts.folder, name: parts.name }),
@@ -387,7 +446,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
         throw new Error(data.error || t('toastUnknownError'));
       }
       // Releer el archivo desde disco y actualizar el editor
-      const fresh = await fetch(
+      const fresh = await sessionFetch(
         `/api/ide-files?path=${encodeURIComponent(parts.folder)}&name=${encodeURIComponent(parts.name)}`
       );
       const freshData = await fresh.json();
@@ -432,7 +491,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
       console.log('💾 Guardando archivo:', { fullPath, fileName, folderPath, contentLength: content.length });
 
       // Usar el endpoint de Next.js para guardar archivos
-      const response = await fetch('/api/ide-files', {
+      const response = await sessionFetch('/api/ide-files', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -483,7 +542,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
     setIsCorrecting(true);
     try {
       const fileName = activeFile.split(/[\\/]/).pop() || '';
-      const response = await fetch('/api/correct-file-code', {
+      const response = await sessionFetch('/api/correct-file-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -533,9 +592,13 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
   };
 
   const handleFixMissingImports = async () => {
-    const dataPath = typeof window !== 'undefined' ? localStorage.getItem('ZEUS_DATA_PATH') || '' : '';
+    const dataPath = useProjectStore.getState().activeCwd || '';
     if (!dataPath) {
       toast({ title: 'Sin DATA_PATH', description: 'Configura DATA_PATH en el campo superior del explorador.', variant: 'destructive' });
+      return;
+    }
+    if (!selectedModel) {
+      toast({ title: 'Sin modelo seleccionado', description: 'Selecciona un modelo de IA para generar los archivos con contenido real.', variant: 'destructive' });
       return;
     }
     setIsFixingImports(true);
@@ -543,10 +606,23 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
     try {
       const absoluteProjectRoot = dataPath.replace(/\\/g, '/').replace(/\/+$/, '') + '/' + currentExplorerPath.replace(/^\/+/, '');
 
-      const response = await fetch('/api/fix-missing-imports', {
+      const response = await sessionFetch('/api/fix-missing-imports', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectRoot: absoluteProjectRoot, stream: true }),
+        body: JSON.stringify({
+          projectRoot: absoluteProjectRoot,
+          stream: true,
+          // Pasar el modelo inline (con apiKey) para que la ruta genere contenido
+          // real en vez de stubs vacíos. Igual que el flujo de generación de app.
+          modelConfig: selectedModel ? {
+            url: selectedModel.base_url,
+            apiKey: selectedModel.api_key,
+            model: selectedModel.model_name,
+            provider: selectedModel.provider || selectedModel.type,
+            id: selectedModel.id,
+            name: selectedModel.nombre_modelo || selectedModel.name,
+          } : undefined,
+        }),
       });
 
       if (!response.ok) {
@@ -611,7 +687,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
   };
 
   const handleValidateComponents = async () => {
-    const dataPath = typeof window !== 'undefined' ? localStorage.getItem('ZEUS_DATA_PATH') || '' : '';
+    const dataPath = useProjectStore.getState().activeCwd || '';
     if (!dataPath) {
       toast({ title: 'Sin DATA_PATH', description: 'Configura DATA_PATH en el campo superior del explorador.', variant: 'destructive' });
       return;
@@ -620,7 +696,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
     setValidateContent('');
     try {
       const absoluteProjectRoot = dataPath.replace(/\\/g, '/').replace(/\/+$/, '') + '/' + currentExplorerPath.replace(/^\/+/, '');
-      const response = await fetch('/api/validate-components', {
+      const response = await sessionFetch('/api/validate-components', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -712,7 +788,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
   };
 
   const generateIcon = async () => {
-    const dataPath = typeof window !== 'undefined' ? localStorage.getItem('ZEUS_DATA_PATH') || '' : '';
+    const dataPath = useProjectStore.getState().activeCwd || '';
     if (!dataPath) {
       toast({ title: 'Sin DATA_PATH', description: 'Configura DATA_PATH en el campo superior del explorador.', variant: 'destructive' });
       return;
@@ -740,7 +816,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
       } else {
         body = { ...body, mode: 'prompt', prompt: iconPrompt.trim(), openaiApiKey: iconApiKey.trim() };
       }
-      const res = await fetch('/api/generate-icon', {
+      const res = await sessionFetch('/api/generate-icon', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -760,7 +836,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
   };
 
   const handleFixDependencies = async () => {
-    const dataPath = typeof window !== 'undefined' ? localStorage.getItem('ZEUS_DATA_PATH') || '' : '';
+    const dataPath = useProjectStore.getState().activeCwd || '';
     if (!dataPath) {
       toast({ title: 'Sin DATA_PATH', description: 'Configura DATA_PATH en el campo superior del explorador.', variant: 'destructive' });
       return;
@@ -775,7 +851,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
       const isPkgOpen = activeFileNorm.endsWith('package.json');
       const pkgContent = isPkgOpen ? openFiles.find(f => (f.path || '').replace(/\\/g, '/') === activeFileNorm)?.content : undefined;
 
-      const response = await fetch('/api/fix-dependencies', {
+      const response = await sessionFetch('/api/fix-dependencies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -799,9 +875,39 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
 
       const result = await response.json();
 
+      const before = result.vulnerabilitiesBefore;
+      const after = result.vulnerabilitiesAfter;
+      const reverted = result.reverted === true;
+      const hasAudit =
+        typeof before === 'number' && typeof after === 'number' && before >= 0 && after >= 0;
+
+      let statusLine: string;
+      let toastTitle: string;
+      if (reverted) {
+        statusLine = '🔁 REVERTIDO: no se pudo mejorar, package.json restaurado al original';
+        toastTitle = 'Corrección revertida';
+      } else if (hasAudit && after === 0 && result.resolved) {
+        statusLine = '✅ SIN VULNERABILIDADES NI CONFLICTOS';
+        toastTitle = 'Dependencias seguras';
+      } else if (hasAudit && after < before) {
+        statusLine = `🛡️ VULNERABILIDADES REDUCIDAS (${before} → ${after}) — quedan ${after}`;
+        toastTitle = 'Vulnerabilidades reducidas';
+      } else if (result.resolved) {
+        statusLine = hasAudit
+          ? `✅ Sin conflictos (vulnerabilidades: ${before} → ${after}, sin mejora)`
+          : '✅ SIN CONFLICTOS';
+        toastTitle = 'Dependencias optimizadas';
+      } else {
+        statusLine = '⚠️ PERSISTEN CONFLICTOS';
+        toastTitle = 'Análisis completado con advertencias';
+      }
+
       let report = `🛡️ ANÁLISIS DE DEPENDENCIAS (Iteraciones: ${result.iterationCount || 1})\n`;
       report += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-      report += `📊 Estado final: ${result.resolved ? '✅ SIN CONFLICTOS' : '⚠️ PERSISTEN CONFLICTOS'}\n\n`;
+      if (hasAudit) {
+        report += `🔒 Vulnerabilidades (npm audit): ${before} → ${after}\n\n`;
+      }
+      report += `📊 Estado final: ${statusLine}\n\n`;
 
       if (result.report) {
         report += `📝 Informe detallado:\n${result.report}\n\n`;
@@ -813,9 +919,11 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
       }
 
       setFixDepsContent(report);
-      toast({ 
-        title: result.resolved ? 'Dependencias optimizadas' : 'Análisis completado con advertencias', 
-        description: `Se realizaron ${result.iterationCount || 1} iteraciones de corrección.` 
+      toast({
+        title: toastTitle,
+        description: reverted
+          ? 'No se redujeron vulnerabilidades; se restauró el package.json original.'
+          : `Se realizaron ${result.iterationCount || 1} iteraciones de corrección.`
       });
     } catch (error: any) {
       toast({ title: 'Error de dependencias', description: error.message || 'Error desconocido', variant: 'destructive' });
@@ -825,7 +933,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
   };
 
   const handleStartPreview = async () => {
-    const dataPath = (typeof window !== 'undefined' ? localStorage.getItem('ZEUS_DATA_PATH') || '' : '').replace(/\\/g, '/').replace(/\/+$/, '');
+    const dataPath = (useProjectStore.getState().activeCwd || '').replace(/\\/g, '/').replace(/\/+$/, '');
     const projectPath = dataPath + (currentExplorerPath ? '/' + currentExplorerPath.replace(/^\/+/, '') : '');
 
     if (!dataPath) {
@@ -839,7 +947,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
 
     try {
       // 1. Verificar que existe package.json
-      const pkgRes = await fetch(`/api/ide-files?name=package.json&path=${encodeURIComponent(currentExplorerPath)}`);
+      const pkgRes = await sessionFetch(`/api/ide-files?name=package.json&path=${encodeURIComponent(currentExplorerPath)}`);
       const pkgData = await pkgRes.json();
       if (!pkgData.success) {
         addLocalMessage({ type: 'error', text: `[Preview] ${t('localPreviewNoPackageJson')}` });
@@ -851,7 +959,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
       addLocalMessage({ type: 'info', text: `[Preview] ${t('localPreviewSendingCommand')}` });
       toast({ title: t('toastStartingProject'), description: t('toastStartingProjectDesc'), variant: 'default' });
 
-      const runRes = await fetch('/api/run-project-dev', {
+      const runRes = await sessionFetch('/api/run-project-dev', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectPath, port: previewPort })
@@ -972,7 +1080,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
   }, [previewErrorBubble, askZeus, toast]);
 
   const handleStopPreview = async () => {
-    const dataPath = (typeof window !== 'undefined' ? localStorage.getItem('ZEUS_DATA_PATH') || '' : '').replace(/\\/g, '/').replace(/\/+$/, '');
+    const dataPath = (useProjectStore.getState().activeCwd || '').replace(/\\/g, '/').replace(/\/+$/, '');
     const projectPath = dataPath + (currentExplorerPath ? '/' + currentExplorerPath.replace(/^\/+/, '') : '');
 
     if (!dataPath) {
@@ -981,7 +1089,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
     }
 
     try {
-      const res = await fetch('/api/run-project-dev', {
+      const res = await sessionFetch('/api/run-project-dev', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectPath })
@@ -1011,7 +1119,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
   };
 
   const handleRunBuild = async () => {
-    const dataPath = (typeof window !== 'undefined' ? localStorage.getItem('ZEUS_DATA_PATH') || '' : '').replace(/\\/g, '/').replace(/\/+$/, '');
+    const dataPath = (useProjectStore.getState().activeCwd || '').replace(/\\/g, '/').replace(/\/+$/, '');
     const projectPath = dataPath + (currentExplorerPath ? '/' + currentExplorerPath.replace(/^\/+/, '') : '');
 
     if (!dataPath) {
@@ -1024,7 +1132,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
     toggleTerminal(true);
 
     try {
-      const res = await fetch('/api/run-project-build', {
+      const res = await sessionFetch('/api/run-project-build', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectPath })
@@ -1460,10 +1568,10 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
       <div className="flex flex-1 overflow-hidden relative min-h-0">
         {/* Explorer Sidebar */}
         {isExplorerOpen && (
-          <div style={{ width: explorerWidth }} className="flex-shrink-0 border-right border-border/80 bg-background/50 flex flex-col relative group">
+          <div id="ide-file-explorer" style={{ width: explorerWidth }} className="flex-shrink-0 border-right border-border/80 bg-background/50 flex flex-col relative group">
             <div className="flex-1 flex flex-col overflow-hidden">
               <div className="flex-shrink-0">
-                <EnvironmentPathSetter />
+                <ProjectPicker />
               </div>
               <div className="flex-1 overflow-hidden">
                 <FileExplorer onFileSelect={handleFileSelect} currentPath={currentExplorerPath} setCurrentPath={setCurrentExplorerPath} />
@@ -1754,7 +1862,7 @@ export default function IDETab({ onOpenPreview, onOpenGitHubModal }: { onOpenPre
 
       {/* Modal Generador de Componentes */}
       {(() => {
-        const dataPath = (typeof window !== 'undefined' ? localStorage.getItem('ZEUS_DATA_PATH') || '' : '').replace(/\\/g, '/').replace(/\/+$/, '');
+        const dataPath = (useProjectStore.getState().activeCwd || '').replace(/\\/g, '/').replace(/\/+$/, '');
         
         // CORRECCIÓN: Usar siempre el root del proyecto (primer segmento) para el generador
         const pathSegments = (currentExplorerPath || '').replace(/\\/g, '/').split('/').filter(Boolean);

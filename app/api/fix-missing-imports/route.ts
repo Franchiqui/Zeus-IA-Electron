@@ -44,6 +44,10 @@ async function getFastTemplateForMissingFile(relTarget: string): Promise<string 
 
 const SOURCE_EXTS = ['.tsx', '.ts', '.jsx', '.js'];
 
+// Configuración de modelo pasada inline desde el cliente (p.ej. el botón del IDE).
+// Si trae apiKey, se usa directamente sin consultar PocketBase.
+type InlineModelConfig = { provider?: string; model: string; url: string; apiKey: string };
+
 const MAX_COMPONENTS_PER_REQUEST = 4;
 
 // ✅ Helpers para evitar duplicados y extensiones dobles
@@ -527,8 +531,9 @@ async function generateFileWithModel(args: {
   userToken?: string;
   requestUrl?: string;
   onLog?: (message: string) => void;
+  modelConfig?: InlineModelConfig;
 }): Promise<{ success: boolean; usedModel: boolean; contentLength: number }> {
-  const { targetPath, officialRoot, fromFiles, appContext, userId, modelId, userToken, onLog } = args;
+  const { targetPath, officialRoot, fromFiles, appContext, userId, modelId, userToken, onLog, modelConfig } = args;
   const ext = path.extname(targetPath).toLowerCase();
   const relTarget = path.relative(officialRoot, targetPath).replace(/\\/g, '/');
 
@@ -576,7 +581,19 @@ async function generateFileWithModel(args: {
     importerContent = '';
   }
 
-  const effectiveModel = await getEffectiveModel(userId, modelId, userToken);
+  // Si el cliente pasa un modelConfig inline con apiKey (p.ej. el botón del IDE),
+  // se usa directamente. Si no, se resuelve desde PocketBase con userId/modelId.
+  let effectiveModel: { provider: string; model: string; url: string; apiKey: string };
+  if (modelConfig && modelConfig.apiKey && modelConfig.model) {
+    effectiveModel = {
+      provider: modelConfig.provider || 'openai',
+      model: modelConfig.model,
+      url: modelConfig.url,
+      apiKey: modelConfig.apiKey,
+    };
+  } else {
+    effectiveModel = await getEffectiveModel(userId, modelId, userToken);
+  }
   log(`✅ Usando modelo: ${effectiveModel.model} (${effectiveModel.provider})`);
 
   let content = '';
@@ -833,7 +850,8 @@ function createStreamingResponse(
   modelId?: string,
   userToken?: string,
   req?: Request,
-  filesToScan?: string[]
+  filesToScan?: string[],
+  modelConfig?: InlineModelConfig
 ) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -952,7 +970,7 @@ function createStreamingResponse(
                 const heartbeat = setInterval(() => { try { controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'ping', round, file: relativePath, message: '...' })}\n\n`)); } catch {} }, 5000);
                 let result;
                 try {
-                  result = await generateFileWithModel({ targetPath: target, officialRoot, fromFiles: info.fromFiles, appContext, userId, modelId, userToken, requestUrl: req?.url, onLog: (msg) => { allGenerationLogs.push({ file: relativePath, status: 'info', message: msg }); } });
+                  result = await generateFileWithModel({ targetPath: target, officialRoot, fromFiles: info.fromFiles, appContext, userId, modelId, userToken, requestUrl: req?.url, modelConfig, onLog: (msg) => { allGenerationLogs.push({ file: relativePath, status: 'info', message: msg }); } });
                 } finally { clearInterval(heartbeat); }
                 allGenerationLogs.push({ file: relativePath, status: result.usedModel ? 'success' : 'fallback', message: result.usedModel ? 'Generado con modelo (' + result.contentLength + ' chars)' : 'Stub (' + result.contentLength + ' chars)' });
                 roundCreated.push(relativePath);
@@ -1054,7 +1072,7 @@ async function getSourceFilesToScan(officialRoot: string, filesToScan?: string[]
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { projectRoot, projectId, userToken, userId, modelId, stream, filesToScan } = body as {
+    const { projectRoot, projectId, userToken, userId, modelId, stream, filesToScan, modelConfig } = body as {
       projectRoot?: string;
       projectId?: string;
       userToken?: string;
@@ -1062,6 +1080,7 @@ export async function POST(req: Request) {
       modelId?: string;
       stream?: boolean;
       filesToScan?: string[];
+      modelConfig?: InlineModelConfig;
     };
 
     if (!projectRoot && !projectId) {
@@ -1072,7 +1091,7 @@ export async function POST(req: Request) {
     
     // ✅ Si se solicita streaming, usar respuesta con streaming
     if (stream) {
-      return createStreamingResponse(officialRoot, projectId, userId, modelId, userToken, req, filesToScan);
+      return createStreamingResponse(officialRoot, projectId, userId, modelId, userToken, req, filesToScan, modelConfig);
     }
 
     const sourceFiles = await getSourceFilesToScan(officialRoot, filesToScan);
@@ -1209,6 +1228,7 @@ export async function POST(req: Request) {
             modelId,
             userToken,
             requestUrl: req.url,
+            modelConfig,
             onLog: (msg) => {
               generationLogs.push({ file: relativePath, status: 'info', message: msg });
             },

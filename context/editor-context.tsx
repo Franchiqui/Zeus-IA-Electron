@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useCallback } from 'react';
 import { useTabState } from '@/lib/tab-state';
+import { sessionFetch } from '@/lib/projectStore';
 
 export interface CorrectionChange {
   lineNumber: number;
@@ -115,7 +116,7 @@ export function EditorProvider({ children, activeTabId = 'default' }: { children
 
     try {
       const fileUrl = `http://localhost:8742/api/files/${encodeURIComponent(name)}?path=${encodeURIComponent(path.replace('/' + name, '').replace(name, ''))}`;
-      const response = await fetch(fileUrl);
+      const response = await sessionFetch(fileUrl);
       const result = await response.json();
 
       if (result && result.success) {

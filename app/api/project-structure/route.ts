@@ -91,7 +91,7 @@ async function scanDirectory(dirPath: string, basePath: string, folders: string[
 
 export async function GET() {
   try {
-    const baseDataPath = getBaseDataPath();
+    const baseDataPath = await getBaseDataPath();
 
     if (!fsSync.existsSync(baseDataPath)) {
       return NextResponse.json(

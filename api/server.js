@@ -16,6 +16,8 @@ const schemaRouter = require('./routes/schema');
 const structureRouter = require('./routes/structure');
 const gitRouter = require('./routes/git');
 const githubRouter = require('./routes/github');
+const sessionRouter = require('./routes/session');
+const { sessionCwdMiddleware } = require('./middleware/sessionCwd');
 
 const app = express();
 const PORT = process.env.PORT || 8742;
@@ -28,6 +30,13 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 // Servir archivos estáticos (uploads, etc.)
 app.use('/uploads', express.static('uploads'));
 app.use('/public', express.static('public'));
+
+// Middleware de sesión: ancla cada request a un cwd de sesión (X-Zeus-Session).
+// Debe ir antes de los routers para que req.sessionCwd esté disponible.
+app.use(sessionCwdMiddleware);
+
+// Rutas de sesión van primero (las usa Next.js para resolver cwd).
+app.use('/api/session', sessionRouter);
 
 // Montar rutas de la API
 app.use('/api/chars', charsRouter);

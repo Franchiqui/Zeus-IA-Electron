@@ -1,20 +1,24 @@
 const fs = require('fs-extra');
 const path = require('path');
+const { getSessionCwd } = require('../middleware/sessionCwd');
 
 /**
- * Genera un esquema completo de archivos y carpetas en DATA_DIR o en una ruta específica
+ * Genera un esquema completo de archivos y carpetas en el cwd de sesión o en una ruta específica
  * Si se proporciona una ruta, muestra solo el contenido directo (no recursivo)
- * Si no se proporciona ruta, muestra el esquema completo recursivo de DATA_DIR
+ * Si no se proporciona ruta, muestra el esquema completo recursivo del cwd
  */
 const generateSchema = async (req, res) => {
   try {
-    const DATA_DIR = require('../config').DATA_DIR;
-    // Obtener la ruta del query parameter, si no usar DATA_DIR
+    const DATA_DIR = getSessionCwd(req);
+    if (!DATA_DIR) {
+      return res.status(400).json({ error: 'No hay sesión activa. Selecciona una carpeta de proyecto.' });
+    }
+    // Obtener la ruta del query parameter, si no usar el cwd de sesión
     const requestedPath = req.query.path;
     let targetPath = DATA_DIR;
 
     if (requestedPath) {
-      // Si se proporciona una ruta, combinarla con DATA_DIR
+      // Si se proporciona una ruta, combinarla con el cwd de sesión
       targetPath = path.join(DATA_DIR, requestedPath);
       // Mostrar solo el contenido directo (no recursivo)
       const schema = await buildDirectorySchemaDirect(targetPath, requestedPath);
@@ -26,7 +30,7 @@ const generateSchema = async (req, res) => {
         generatedAt: new Date().toISOString()
       });
     } else {
-      // Si no hay ruta, mostrar esquema completo recursivo de DATA_DIR
+      // Si no hay ruta, mostrar esquema completo recursivo del cwd
       const schema = await buildDirectorySchema(DATA_DIR, '');
       res.json({
         success: true,
@@ -279,7 +283,10 @@ const buildDirectorySchema = async (dirPath, relativePath = '') => {
  */
 const getSimpleSchema = async (req, res) => {
   try {
-    const DATA_DIR = require('../config').DATA_DIR;
+    const DATA_DIR = getSessionCwd(req);
+    if (!DATA_DIR) {
+      return res.status(400).json({ error: 'No hay sesión activa. Selecciona una carpeta de proyecto.' });
+    }
     const schema = await buildSimpleDirectorySchema(DATA_DIR);
 
     res.json({

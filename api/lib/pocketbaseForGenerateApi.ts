@@ -63,8 +63,10 @@ export async function getPocketBaseUrl(): Promise<string> {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 segundos timeout
 
-        await fetch(primaryUrl, {
-            method: 'HEAD',
+        // /api/health responde 200 en PocketBase. HEAD sobre / devuelve 404
+        // (el admin UI se sirve por GET /) y ensucia la consola del navegador.
+        await fetch(`${primaryUrl.replace(/\/$/, '')}/api/health`, {
+            method: 'GET',
             signal: controller.signal
         });
 

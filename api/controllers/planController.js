@@ -1,6 +1,7 @@
 const fs = require('fs-extra');
 const path = require('path');
 const PocketBase = require('pocketbase/cjs');
+const { getSessionCwd } = require('../middleware/sessionCwd');
 
 // Configuración de PocketBase local
 const pb = new PocketBase(process.env.NEXT_PUBLIC_POCKETBASE_LOCAL_URL || 'http://localhost:8091');
@@ -21,14 +22,23 @@ const authenticatePB = async () => {
   }
 };
 
-// Obtener el directorio de planes (usando DATA_DIR dinámico)
-const getPlansDir = () => {
-  return path.join(require('../config').DATA_DIR, 'plans');
+function requireCwd(req, res) {
+  const cwd = getSessionCwd(req);
+  if (!cwd) {
+    res.status(400).json({ error: 'No hay sesión activa. Selecciona una carpeta de proyecto.' });
+    return null;
+  }
+  return cwd;
+}
+
+// Obtener el directorio de planes (usando el cwd de sesión)
+const getPlansDir = (cwd) => {
+  return path.join(cwd, 'plans');
 };
 
 // Asegurar que el directorio de planes existe
-const ensurePlansDir = async () => {
-  await fs.ensureDir(getPlansDir());
+const ensurePlansDir = async (cwd) => {
+  await fs.ensureDir(getPlansDir(cwd));
 };
 
 // Función para generar IDs compatibles con PocketBase (15 caracteres alfanuméricos)
@@ -46,11 +56,12 @@ const planController = {
   createPlan: async (req, res) => {
     const { name, description, model_id } = req.body;
     if (!name) return res.status(400).json({ error: 'name es requerido' });
-    await ensurePlansDir();
+    const cwd = requireCwd(req, res); if (!cwd) return;
+    await ensurePlansDir(cwd);
     await authenticatePB();
     try {
       const fileName = name.toLowerCase().replace(/[^a-z0-9\s_-]/g, '').replace(/\s+/g, '-').trim() + '.json';
-      const planPath = path.join(getPlansDir(), fileName);
+      const planPath = path.join(getPlansDir(cwd), fileName);
       if (await fs.pathExists(planPath)) return res.status(400).json({ error: 'Ya existe un plan con ese nombre' });
       const newPlan = { id: fileName.replace('.json', ''), name, description: description || '', tasks: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
       await fs.writeJson(planPath, newPlan, { spaces: 2 });
@@ -78,20 +89,22 @@ const planController = {
   },
 
   listPlans: async (req, res) => {
-    await ensurePlansDir();
+    const cwd = requireCwd(req, res); if (!cwd) return;
+    await ensurePlansDir(cwd);
     try {
-      const files = (await fs.readdir(getPlansDir())).filter(f => f.endsWith('.json'));
+      const files = (await fs.readdir(getPlansDir(cwd))).filter(f => f.endsWith('.json'));
       const plans = [];
-      for (const f of files) { try { plans.push(await fs.readJson(path.join(getPlansDir(), f))); } catch (e) {} }
+      for (const f of files) { try { plans.push(await fs.readJson(path.join(getPlansDir(cwd), f))); } catch (e) {} }
       res.json({ success: true, plans: plans.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) });
     } catch (error) { res.status(500).json({ error: error.message }); }
   },
 
   getPlan: async (req, res) => {
     const { name } = req.params;
+    const cwd = requireCwd(req, res); if (!cwd) return;
     try {
       const fileName = name.endsWith('.json') ? name : name.toLowerCase().replace(/\s+/g, '-') + '.json';
-      const p = path.join(getPlansDir(), fileName);
+      const p = path.join(getPlansDir(cwd), fileName);
       if (!await fs.pathExists(p)) return res.status(404).json({ error: 'Plan no encontrado' });
       res.json({ success: true, plan: await fs.readJson(p) });
     } catch (error) { res.status(500).json({ error: error.message }); }
@@ -100,9 +113,10 @@ const planController = {
   updatePlan: async (req, res) => {
     const { name } = req.params;
     const { newName, description } = req.body;
+    const cwd = requireCwd(req, res); if (!cwd) return;
     try {
       const fileName = name.endsWith('.json') ? name : name.toLowerCase().replace(/\s+/g, '-') + '.json';
-      const p = path.join(getPlansDir(), fileName);
+      const p = path.join(getPlansDir(cwd), fileName);
       if (!await fs.pathExists(p)) return res.status(404).json({ error: 'Plan no encontrado' });
       const plan = await fs.readJson(p);
       if (newName) plan.name = newName;
@@ -115,9 +129,10 @@ const planController = {
 
   deletePlan: async (req, res) => {
     const { name } = req.params;
+    const cwd = requireCwd(req, res); if (!cwd) return;
     try {
       const fileName = name.endsWith('.json') ? name : name.toLowerCase().replace(/\s+/g, '-') + '.json';
-      const p = path.join(getPlansDir(), fileName);
+      const p = path.join(getPlansDir(cwd), fileName);
       if (!await fs.pathExists(p)) return res.status(404).json({ error: 'Plan no encontrado' });
       const plan = await fs.readJson(p);
       await fs.remove(p);
@@ -129,11 +144,12 @@ const planController = {
   savePlan: async (req, res) => {
     const { name, description, model_id, tasks } = req.body;
     if (!name) return res.status(400).json({ error: 'name es requerido' });
-    await ensurePlansDir();
+    const cwd = requireCwd(req, res); if (!cwd) return;
+    await ensurePlansDir(cwd);
     await authenticatePB();
     try {
       const fileName = name.toLowerCase().replace(/\s+/g, '-') + '.json';
-      const p = path.join(getPlansDir(), fileName);
+      const p = path.join(getPlansDir(cwd), fileName);
       let plan = (await fs.pathExists(p)) ? await fs.readJson(p) : { id: fileName.replace('.json', ''), name, description: description || '', tasks: [], createdAt: new Date().toISOString() };
       if (name) plan.name = name;
       if (description !== undefined) plan.description = description;
@@ -156,11 +172,12 @@ const planController = {
   saveTask: async (req, res) => {
     const { planName, name, type, operation, extension, path: tPath, content } = req.body;
     if (!planName || !name) return res.status(400).json({ error: 'planName y name son requeridos' });
-    await ensurePlansDir();
+    const cwd = requireCwd(req, res); if (!cwd) return;
+    await ensurePlansDir(cwd);
     await authenticatePB();
     try {
       const fileName = planName.toLowerCase().replace(/\s+/g, '-') + '.json';
-      const p = path.join(getPlansDir(), fileName);
+      const p = path.join(getPlansDir(cwd), fileName);
       if (!await fs.pathExists(p)) return res.status(404).json({ error: 'Plan no encontrado' });
       const plan = await fs.readJson(p);
       const newTask = { id: name.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now(), name, type: type || 'file', operation: operation || 'create', extension: extension || '', path: tPath || '', content: content || '', status: 'pending', createdAt: new Date().toISOString() };
@@ -192,10 +209,10 @@ const planController = {
   createTask: async (req, res) => {
     const { planName, name, type, operation, extension, path: tPath, content } = req.body;
     if (!name) return res.status(400).json({ error: 'name es requerido' });
-    
+    const cwd = requireCwd(req, res); if (!cwd) return;
+
     try {
-      const DATA_DIR = require('../config').DATA_DIR;
-      const fullPath = path.join(DATA_DIR, tPath || '', extension ? `${name}.${extension}` : name);
+      const fullPath = path.join(cwd, tPath || '', extension ? `${name}.${extension}` : name);
       
       if (type === 'folder') {
         await fs.ensureDir(fullPath);
@@ -225,18 +242,19 @@ const planController = {
   executePlan: async (req, res) => {
     const { planName, force } = req.body;
     if (!planName) return res.status(400).json({ error: 'Falta planName' });
-    await ensurePlansDir();
+    const cwd = requireCwd(req, res); if (!cwd) return;
+    await ensurePlansDir(cwd);
     await authenticatePB();
     try {
       const fileName = planName.toLowerCase().replace(/\s+/g, '-') + '.json';
-      const p = path.join(getPlansDir(), fileName);
+      const p = path.join(getPlansDir(cwd), fileName);
       if (!await fs.pathExists(p)) return res.status(404).json({ error: 'Plan no encontrado' });
       const plan = await fs.readJson(p);
       const tasksToExec = force ? plan.tasks : plan.tasks.filter(t => t.status === 'pending');
       const results = [];
       for (const task of tasksToExec) {
         try {
-          const result = await executeTask(task);
+          const result = await executeTask(task, cwd);
           const idx = plan.tasks.findIndex(t => t.id === task.id);
           plan.tasks[idx].status = result.success ? 'completed' : 'failed';
           plan.tasks[idx].result = result;
@@ -267,22 +285,24 @@ const planController = {
 
   listTasks: async (req, res) => {
     const { fileName } = req.query;
+    const cwd = requireCwd(req, res); if (!cwd) return;
     try {
-      await ensurePlansDir();
+      await ensurePlansDir(cwd);
       if (fileName) {
-        const p = path.join(getPlansDir(), fileName);
+        const p = path.join(getPlansDir(cwd), fileName);
         if (!await fs.pathExists(p)) return res.status(404).json({ error: 'Not found' });
         const plan = await fs.readJson(p);
         return res.json({ success: true, tasks: plan.tasks });
       }
-      const files = await fs.readdir(getPlansDir());
+      const files = await fs.readdir(getPlansDir(cwd));
       res.json({ success: true, availableFiles: files.filter(f => f.endsWith('.json')) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   },
 
   explorerData: async (req, res) => {
     try {
-      const dataPath = path.normalize(require('../config').DATA_DIR);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const dataPath = path.normalize(cwd);
       if (!await fs.pathExists(dataPath)) return res.status(404).json({ error: 'Data path not found' });
 
       const IGNORE_DIRS = ['node_modules', '.next', '.git', 'dist', 'build'];
@@ -324,20 +344,20 @@ const planController = {
   },
 
   getPlansList: async (req, res) => {
+    const cwd = requireCwd(req, res); if (!cwd) return;
     try {
-      await ensurePlansDir();
-      const files = (await fs.readdir(getPlansDir())).filter(f => f.endsWith('.json'));
+      await ensurePlansDir(cwd);
+      const files = (await fs.readdir(getPlansDir(cwd))).filter(f => f.endsWith('.json'));
       const plans = [];
-      for (const f of files) { const p = await fs.readJson(path.join(getPlansDir(), f)); plans.push({ id: p.id, name: p.name, taskCount: p.tasks.length }); }
+      for (const f of files) { const p = await fs.readJson(path.join(getPlansDir(cwd), f)); plans.push({ id: p.id, name: p.name, taskCount: p.tasks.length }); }
       res.json({ success: true, plans });
     } catch (e) { res.status(500).json({ error: e.message }); }
   }
 };
 
-async function executeTask(task) {
+async function executeTask(task, cwd) {
   const { type, operation, name, path: tPath, extension, content } = task;
-  const DATA_DIR = require('../config').DATA_DIR;
-  const fullPath = path.join(DATA_DIR, tPath || '', extension ? `${name}.${extension}` : name);
+  const fullPath = path.join(cwd, tPath || '', extension ? `${name}.${extension}` : name);
   if (type === 'file') {
     if (operation === 'delete') { if (await fs.pathExists(fullPath)) await fs.remove(fullPath); return { success: true, operation: 'delete', path: fullPath }; }
     await fs.ensureDir(path.dirname(fullPath));

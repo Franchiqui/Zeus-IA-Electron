@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
 import fsSync from 'fs';
-import { readDataPathFromEnv } from '@/lib/env';
+import { getSessionCwdFromRequest } from '@/lib/sessionResolve';
+import { getBaseDataPath } from '@/lib/env';
 
 export async function POST(request: Request) {
   try {
@@ -16,22 +17,23 @@ export async function POST(request: Request) {
       );
     }
 
-    const dataPath = readDataPathFromEnv() || process.env.DATA_PATH;
-    if (!dataPath) {
-      return NextResponse.json(
-        { error: 'DATA_PATH no configurado' },
-        { status: 500 }
-      );
+    // Resolver la ruta base: sesión de la request (header X-Zeus-Session),
+    // fallback a la sesión activa global, fallback a DATA_PATH
+    let baseDataPath: string;
+    const sessionCwd = await getSessionCwdFromRequest(request);
+    if (sessionCwd) {
+      baseDataPath = path.normalize(sessionCwd);
+    } else {
+      baseDataPath = await getBaseDataPath();
     }
-
-    const baseDataPath = path.normalize(
-      path.isAbsolute(dataPath) ? dataPath : path.resolve(process.cwd(), dataPath)
-    );
 
     let basePath: string;
     if (projectRoot && typeof projectRoot === 'string') {
       const normalizedRoot = path.normalize(projectRoot);
-      if (normalizedRoot.toLowerCase().startsWith(baseDataPath.toLowerCase())) {
+      const bl = baseDataPath.toLowerCase();
+      const rl = normalizedRoot.toLowerCase();
+      const sep = path.sep;
+      if (rl === bl || rl.startsWith(bl + sep)) {
         basePath = normalizedRoot;
       } else {
         basePath = baseDataPath;

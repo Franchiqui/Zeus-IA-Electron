@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
 import fsSync from 'fs';
-import { getBaseDataPath } from '@/lib/env';
+import { getSessionCwdFromRequest } from '@/lib/sessionResolve';
+import { safeWriteFile } from '@/utils/fileOps';
 
 function safeJoin(base: string, rel: string): string {
   const target = path.resolve(path.join(base, rel));
@@ -37,7 +38,8 @@ async function deletePathRecursive(targetPath: string): Promise<void> {
 // GET /api/ide-files?path=&name=filename.txt&raw=1  (read single file)
 export async function GET(request: Request) {
   try {
-    const baseDataPath = getBaseDataPath();
+    const baseDataPath = await getSessionCwdFromRequest(request);
+    if (!baseDataPath) return NextResponse.json({ success: false, error: "No hay sesión activa. Selecciona una carpeta de proyecto." }, { status: 400 });
     const { searchParams } = new URL(request.url);
     const relPath = searchParams.get('path') || '';
     const type = searchParams.get('type') || 'all';
@@ -127,7 +129,8 @@ export async function GET(request: Request) {
 // POST /api/ide-files { action: 'createFile'|'createFolder', path, name, content? }
 export async function POST(request: Request) {
   try {
-    const baseDataPath = getBaseDataPath();
+    const baseDataPath = await getSessionCwdFromRequest(request);
+    if (!baseDataPath) return NextResponse.json({ success: false, error: "No hay sesión activa. Selecciona una carpeta de proyecto." }, { status: 400 });
     const body = await request.json();
     const { action, path: relPath = '', name, content = '' } = body;
 
@@ -149,7 +152,10 @@ export async function POST(request: Request) {
 
     if (action === 'createFile') {
       await fs.mkdir(path.dirname(targetPath), { recursive: true });
-      await fs.writeFile(targetPath, content, 'utf8');
+      const writeRes = await safeWriteFile(targetPath, content);
+      if (!writeRes.success) {
+        return NextResponse.json({ success: false, error: writeRes.error }, { status: 500 });
+      }
       return NextResponse.json({ success: true });
     }
 
@@ -163,7 +169,8 @@ export async function POST(request: Request) {
 // PUT /api/ide-files { action: 'rename'|'save', path, name, newName?, content? }
 export async function PUT(request: Request) {
   try {
-    const baseDataPath = getBaseDataPath();
+    const baseDataPath = await getSessionCwdFromRequest(request);
+    if (!baseDataPath) return NextResponse.json({ success: false, error: "No hay sesión activa. Selecciona una carpeta de proyecto." }, { status: 400 });
     const body = await request.json();
     const { action, path: relPath = '', name, newName, content } = body;
 
@@ -202,7 +209,11 @@ export async function PUT(request: Request) {
           await fs.writeFile(resolvedFile + '.zeus-backup', current, 'utf8');
         }
       }
-      await fs.writeFile(resolvedFile, content, 'utf8');
+      // Escritura segura de contenido: atómica, BOM/CRLF, fail-closed, sha256.
+      const writeRes = await safeWriteFile(resolvedFile, content);
+      if (!writeRes.success) {
+        return NextResponse.json({ success: false, error: writeRes.error }, { status: 500 });
+      }
       return NextResponse.json({ success: true });
     }
 
@@ -216,7 +227,8 @@ export async function PUT(request: Request) {
 // DELETE /api/ide-files?path=&name=
 export async function DELETE(request: Request) {
   try {
-    const baseDataPath = getBaseDataPath();
+    const baseDataPath = await getSessionCwdFromRequest(request);
+    if (!baseDataPath) return NextResponse.json({ success: false, error: "No hay sesión activa. Selecciona una carpeta de proyecto." }, { status: 400 });
     const { searchParams } = new URL(request.url);
     const relPath = searchParams.get('path') || '';
     const name = searchParams.get('name');

@@ -32,6 +32,7 @@ import {
 import { cn } from '../../lib/utils';
 import { useTranslation } from '../../contexts/translation-context';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
+import { sessionFetch } from '@/lib/projectStore';
 
 // Color Picker Component with Color Palette
 function ColorPicker({ color, onColorChange, disableAutoSave = false }: { 
@@ -561,7 +562,7 @@ export function PropertyEditor({
         return;
       }
 
-      const response = await fetch('/api/copy-uploads-to-public', {
+      const response = await sessionFetch('/api/copy-uploads-to-public', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ files: fileNames })
@@ -645,7 +646,7 @@ export function PropertyEditor({
           });
 
           // Subir al servidor
-          const response = await fetch('/api/upload-image', {
+          const response = await sessionFetch('/api/upload-image', {
             method: 'POST',
             body: formData,
           });
@@ -741,7 +742,7 @@ export function PropertyEditor({
   React.useEffect(() => {
     const checkPublicUploads = async () => {
       try {
-        const response = await fetch('/api/check-public-uploads', {
+        const response = await sessionFetch('/api/check-public-uploads', {
           method: 'GET',
         });
 
@@ -1722,7 +1723,7 @@ export function PropertyEditor({
                                     deleteParams.append('projectSource', projectSource);
                                   }
                                   
-                                  const response = await fetch(`/api/upload-image?${deleteParams}`, {
+                                  const response = await sessionFetch(`/api/upload-image?${deleteParams}`, {
                                     method: 'DELETE',
                                   });
                                   

@@ -4,7 +4,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Check, ChevronDown, ChevronRight, GitBranch, Loader2, Wand2, Save, FolderOpen, Trash2, RefreshCw } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useChatContext } from '@/components/ChatContext';
+import { useTranslation } from '@/contexts/translation-context';
 import pb, { saveToBothDatabases, deleteFromBothDatabases } from '@/lib/pocketbase';
+import { sessionFetch } from '@/lib/projectStore';
 
 interface StructurePlanTabProps {
   plans?: any[];
@@ -89,6 +91,7 @@ const FileTreeNode = ({ name, node, depth = 0 }: { name: string; node: any; dept
 export default function StructurePlanTab({ plans = [], setPlans }: StructurePlanTabProps) {
   const { selectedModel, models, refreshExplorer } = useStore();
   const { setMessages, startNewChat } = useChatContext();
+  const { t } = useTranslation();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [stages, setStages] = useState('');
@@ -234,13 +237,13 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
       console.log('Plan cargado:', record.title);
     } catch (e) {
       console.error('Error al cargar plan:', e);
-      setError('Error al cargar el plan seleccionado');
+      setError(t('structurePlanErrLoadPlan'));
     }
   };
 
   const handleSavePlan = async () => {
     if (!streamingPlan) {
-      setError('No hay un plan para guardar');
+      setError(t('structurePlanErrNoPlanToSave'));
       return;
     }
 
@@ -276,17 +279,17 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
       console.log('Plan guardado exitosamente');
     } catch (e) {
       console.error('Error al guardar plan:', e);
-      setError('Error al guardar el plan');
+      setError(t('structurePlanErrSave'));
     }
   };
 
   const handleDeletePlan = async () => {
     if (!selectedPlanId) {
-      setError('No hay ningún plan seleccionado para borrar');
+      setError(t('structurePlanErrNoPlanToDelete'));
       return;
     }
 
-    if (!confirm('¿Estás seguro de que quieres borrar este plan? Esta acción no se puede deshacer.')) {
+    if (!confirm(t('structurePlanConfirmDelete'))) {
       return;
     }
 
@@ -302,7 +305,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
       console.log('Plan borrado exitosamente');
     } catch (e) {
       console.error('Error al borrar plan:', e);
-      setError('Error al borrar el plan');
+      setError(t('structurePlanErrDelete'));
     }
   };
 
@@ -310,7 +313,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
     setIsScanningProject(true);
     setError(null);
     try {
-      const res = await fetch('/api/project-structure');
+      const res = await sessionFetch('/api/project-structure');
       const data = await res.json();
       if (data.success && data.structure) {
         setProjectContext({
@@ -319,10 +322,10 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
           files: data.structure.files || [],
         });
       } else {
-        setError(data.error || 'No se pudo escanear la estructura del proyecto');
+        setError(data.error || t('structurePlanErrScanStructure'));
       }
     } catch (err: any) {
-      setError(err.message || 'Error al escanear el proyecto');
+      setError(err.message || t('structurePlanErrScan'));
     } finally {
       setIsScanningProject(false);
     }
@@ -437,7 +440,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
         {
           id: messageId,
           role: 'assistant',
-          content: `Ejecutando etapa ${stageNumber}: ${stageName}${frames[frameIndex]}`,
+          content: t('structurePlanChatExecuting').replace('{n}', String(stageNumber)).replace('{name}', stageName) + frames[frameIndex],
           createdAt: new Date().toISOString(),
         },
       ];
@@ -454,7 +457,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
           msg.id === messageId
             ? {
                 ...msg,
-                content: `Ejecutando etapa ${stageNumber}: ${stageName}${frames[frameIndex]}`,
+                content: t('structurePlanChatExecuting').replace('{n}', String(stageNumber)).replace('{name}', stageName) + frames[frameIndex],
               }
             : msg
         )
@@ -529,12 +532,12 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
 
   const handleCreatePlan = async (resume = false) => {
     if (!resume && (!title || !description || !stages)) {
-      setError('Por favor completa todos los campos');
+      setError(t('structurePlanErrCompleteFields'));
       return;
     }
 
     if (resume && !streamingPlan) {
-      setError('No hay un plan parcial para reanudar');
+      setError(t('structurePlanErrNoPartialPlan'));
       return;
     }
 
@@ -583,7 +586,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
     }
 
     try {
-      const response = await fetch('/api/structure-plan/generate', {
+      const response = await sessionFetch('/api/structure-plan/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -596,14 +599,14 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
       });
 
       if (!response.ok) {
-        throw new Error('Error al generar el plan');
+        throw new Error(t('structurePlanErrGenerate'));
       }
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
 
       if (!reader) {
-        throw new Error('No se pudo leer el stream');
+        throw new Error(t('structurePlanErrReadStream'));
       }
 
       let sseBuffer = '';
@@ -710,7 +713,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
          autoResumeTimeoutRef.current = setTimeout(() => handleCreatePlan(true), 5000);
       }
     } catch (err: any) {
-      setError(err.message || 'Error al generar el plan');
+      setError(err.message || t('structurePlanErrGenerate'));
       // Auto reanudar si hubo excepción y estamos en auto mode
       if (isAutoMode) {
         console.log('Excepción en generación, reintentando en 5s (Auto Mode)...');
@@ -724,7 +727,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
 
   const handleImproveDescription = async () => {
     if (!description.trim()) {
-      setError('Escribe una descripción básica primero para poder mejorarla.');
+      setError(t('structurePlanErrImproveDescFirst'));
       return;
     }
 
@@ -736,13 +739,13 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
     const modelIdToUse = selectedModel?.id || selectedPlanModelId || '';
 
     if (!modelIdToUse) {
-      setError('Por favor, selecciona un modelo en la barra de navegación o en el selector de plan.');
+      setError(t('structurePlanErrSelectModel'));
       setIsImprovingDescription(false);
       return;
     }
 
     try {
-      const response = await fetch('/api/generate-prompt', {
+      const response = await sessionFetch('/api/generate-prompt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -770,7 +773,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
         }
       }
     } catch (err: any) {
-      setError(err.message || 'Error al conectar con la IA para mejorar el prompt');
+      setError(err.message || t('structurePlanErrImproveConnect'));
     } finally {
       setIsImprovingDescription(false);
     }
@@ -824,7 +827,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
       .map((f: any) => f.path);
 
     try {
-      const response = await fetch('/api/structure-plan/execute-stage', {
+      const response = await sessionFetch('/api/structure-plan/execute-stage', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -852,14 +855,14 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
       });
 
       if (!response.ok) {
-        throw new Error('Error al ejecutar la etapa');
+        throw new Error(t('structurePlanErrExecuteStage'));
       }
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
 
       if (!reader) {
-        throw new Error('No se pudo leer el stream');
+        throw new Error(t('structurePlanErrReadStream'));
       }
 
       let executionResult: any = { summary: '', files: [], explanation: '', nextSteps: [] };
@@ -898,7 +901,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                     {
                       id: `${chatMessageBase}-summary-${Date.now()}`,
                       role: 'assistant',
-                      content: `Resumen etapa ${stage.number}:\n${data.content}`,
+                      content: t('structurePlanChatSummary').replace('{n}', String(stage.number)).replace('{content}', data.content),
                       createdAt: new Date().toISOString(),
                     },
                   ]);
@@ -938,7 +941,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                     {
                       id: `${chatMessageBase}-skipped-${Date.now()}`,
                       role: 'assistant',
-                      content: `⏭️ Archivo saltado (ya creado): ${data.path}`,
+                      content: t('structurePlanChatFileSkipped').replace('{path}', data.path),
                       createdAt: new Date().toISOString(),
                     },
                   ]);
@@ -972,7 +975,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                     {
                       id: `${chatMessageBase}-file-${Date.now()}`,
                       role: 'assistant',
-                      content: `Archivo generado: ${data.file.path}\n\n\`\`\`${data.file.path.split('.').pop() || 'text'}\n${data.file.content}\n\`\`\``,
+                      content: t('structurePlanChatFileGenerated').replace('{path}', data.file.path).replace('{ext}', data.file.path.split('.').pop() || 'text').replace('{content}', data.file.content),
                       createdAt: new Date().toISOString(),
                     },
                   ]);
@@ -994,7 +997,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                     {
                       id: `${chatMessageBase}-explanation-${Date.now()}`,
                       role: 'assistant',
-                      content: `Explicación etapa ${stage.number}:\n${data.content}`,
+                      content: t('structurePlanChatExplanation').replace('{n}', String(stage.number)).replace('{content}', data.content),
                       createdAt: new Date().toISOString(),
                     },
                   ]);
@@ -1015,7 +1018,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                       {
                         id: `${chatMessageBase}-nextsteps-${Date.now()}`,
                         role: 'assistant',
-                        content: `Próximos pasos etapa ${stage.number}:\n${data.steps.map((step: string) => `- ${step}`).join('\n')}`,
+                        content: t('structurePlanChatNextSteps').replace('{n}', String(stage.number)).replace('{steps}', data.steps.map((step: string) => `- ${step}`).join('\n')),
                         createdAt: new Date().toISOString(),
                       },
                     ]);
@@ -1052,7 +1055,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                     {
                       id: `stage-result-${stage.number}-${Date.now()}`,
                       role: 'assistant',
-                      content: `✅ Etapa ${stage.number} completada: ${stage.name}`,
+                      content: t('structurePlanChatStageCompleted').replace('{n}', String(stage.number)).replace('{name}', stage.name),
                       createdAt: new Date().toISOString(),
                     },
                   ]);
@@ -1061,7 +1064,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
 
                 case 'error':
                   stopStageTypingIndicator(stage.number);
-                  setError(data.error || 'Error al ejecutar la etapa');
+                  setError(data.error || t('structurePlanErrExecuteStage'));
                   setStreamingPlan(prev => prev ? ({
                     ...prev,
                     stages: prev.stages.map((s, i) =>
@@ -1074,7 +1077,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                     {
                       id: `stage-error-${stage.number}-${Date.now()}`,
                       role: 'assistant',
-                      content: `Error al ejecutar etapa ${stage.number}: ${data.error || 'Error desconocido'}`,
+                      content: t('structurePlanErrExecuteStageWithNumber').replace('{n}', String(stage.number)).replace('{error}', data.error || t('structurePlanUnknownError')),
                       createdAt: new Date().toISOString(),
                     },
                   ]);
@@ -1153,7 +1156,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
         return;
       }
 
-      setError(err.message || 'Error al ejecutar la etapa');
+      setError(err.message || t('structurePlanErrExecuteStage'));
       setStreamingPlan(prev => prev ? ({
         ...prev,
         stages: prev.stages.map((s, i) =>
@@ -1167,7 +1170,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
         {
           id: `stage-error-${stage.number}-${Date.now()}`,
           role: 'assistant',
-          content: `Error al ejecutar etapa ${stage.number}: ${err.message}`,
+          content: t('structurePlanErrExecuteStageWithNumber').replace('{n}', String(stage.number)).replace('{error}', err.message),
           createdAt: new Date().toISOString(),
         },
       ]);
@@ -1213,15 +1216,15 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
             <GitBranch className="w-6 h-6 text-success" />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-foreground">Structure Plan</h2>
-            <p className="text-sm text-muted-foreground/80 font-medium">Generate project structure by stages</p>
+            <h2 className="text-xl font-bold text-foreground">{t('tabStructurePlan')}</h2>
+            <p className="text-sm text-muted-foreground/80 font-medium">{t('structurePlanSubtitle')}</p>
           </div>
         </div>
         {selectedModel && (
           <div className="flex flex-col gap-2 px-3 py-2 bg-background border border-blue-800 rounded-lg min-w-[260px]">
-            <span className="text-[11px] font-bold text-success uppercase tracking-wider mb-1">Modo Automático</span>
+            <span className="text-[11px] font-bold text-success uppercase tracking-wider mb-1">{t('structurePlanAutoMode')}</span>
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-primary-foreground shrink-0">Plan</span>
+              <span className="text-[11px] text-primary-foreground shrink-0">{t('structurePlanPlanLabel')}</span>
               <select
                 value={effectivePlanModelId}
                 onChange={(e) => setSelectedPlanModelId(e.target.value)}
@@ -1235,12 +1238,12 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                     </option>
                   ))
                 ) : (
-                  <option value="">No hay modelos</option>
+                  <option value="">{t('structurePlanNoModels')}</option>
                 )}
               </select>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-purple-300 shrink-0">Plan Guardado</span>
+              <span className="text-[11px] text-purple-300 shrink-0">{t('structurePlanSavedPlan')}</span>
               <select
                 value={selectedPlanId}
                 onChange={(e) => {
@@ -1252,16 +1255,16 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                 disabled={savedPlans.length === 0}
                 className="w-full bg-background border border-purple-800 rounded-md px-2 py-1 text-[11px] text-foreground outline-none"
               >
-                <option value="">Seleccionar plan...</option>
+                <option value="">{t('structurePlanSelectPlan')}</option>
                 {savedPlans.map((plan) => (
                   <option key={plan.id} value={plan.id}>
-                    {plan.title} ({plan.total_stages} etapas)
+                    {plan.title} ({t('structurePlanStagesCount').replace('{count}', String(plan.total_stages))})
                   </option>
                 ))}
               </select>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-cyan-300 shrink-0">Ejecución</span>
+              <span className="text-[11px] text-cyan-300 shrink-0">{t('structurePlanExecution')}</span>
               <select
                 value={effectiveExecutionModelId}
                 onChange={(e) => setSelectedExecutionModelId(e.target.value)}
@@ -1275,7 +1278,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                     </option>
                   ))
                 ) : (
-                  <option value="">No hay modelos</option>
+                  <option value="">{t('structurePlanNoModels')}</option>
                 )}
               </select>
             </div>
@@ -1283,13 +1286,13 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
             {/* Toggle Contexto de Proyecto */}
             <div className="flex items-center justify-between gap-2">
               <div className="flex flex-col">
-                <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Contexto de Proyecto</span>
+                <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">{t('structurePlanProjectContext')}</span>
                 <span className="text-[9px] text-muted-foreground/80">
                   {isProjectContextMode
                     ? (projectContext
-                        ? `${projectContext.files.length} archivos, ${projectContext.folders.length} carpetas`
-                        : 'Escaneando...')
-                    : 'Incluir estructura existente'}
+                        ? t('structurePlanContextFilesFolders').replace('{files}', String(projectContext.files.length)).replace('{folders}', String(projectContext.folders.length))
+                        : t('structurePlanScanning'))
+                    : t('structurePlanIncludeExisting')}
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
@@ -1298,7 +1301,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                     onClick={scanProjectStructure}
                     disabled={isScanningProject}
                     className="p-1 hover:bg-card rounded text-muted-foreground/80 hover:text-amber-400 transition-colors"
-                    title="Re-escanear estructura del proyecto"
+                    title={t('structurePlanRescanTitle')}
                   >
                     {isScanningProject ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
@@ -1340,7 +1343,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                   onClick={handleSavePlan}
                   disabled={!streamingPlan}
                   className="flex items-center gap-1.5 px-2 py-1 bg-success/20 hover:bg-success/50 border border-success rounded-md text-[11px] text-success transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Guardar plan en base de datos"
+                  title={t('structurePlanSaveTitle')}
                 >
                   <Save className="w-3.5 h-3.5" />
                 </button>
@@ -1348,7 +1351,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                   onClick={handleDeletePlan}
                   disabled={!selectedPlanId}
                   className="flex items-center gap-1.5 px-2 py-1 bg-red-900/30 hover:bg-red-800/50 border border-red-800 rounded-md text-[11px] text-destructive transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Borrar plan seleccionado"
+                  title={t('structurePlanDeleteTitle')}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -1363,10 +1366,10 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
           <div className="bg-background border border-blue-800 rounded-xl p-6">
             <div className="space-y-6">
               <div className="space-y-2">
-                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Título</label>
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{t('structurePlanTitleLabel')}</label>
                 <input
                   type="text"
-                  placeholder="Ej: Aplicación de notas"
+                  placeholder={t('structurePlanTitlePlaceholder')}
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   className="w-full bg-card border border-border/50 rounded-lg px-4 py-3 text-sm text-foreground outline-none focus:border-success transition-all"
@@ -1375,7 +1378,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Descripción</label>
+                  <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{t('structurePlanDescription')}</label>
                   <div className="flex items-center gap-4">
                     <label className="flex items-center gap-2 cursor-pointer group">
                       <input
@@ -1384,12 +1387,12 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                         onChange={(e) => setIsLocalTarget(e.target.checked)}
                         className="w-3.5 h-3.5 rounded border-border/50 bg-card text-success focus:ring-success focus:ring-offset-gray-900 transition-all cursor-pointer"
                       />
-                      <span className="text-[10px] text-muted-foreground/80 group-hover:text-muted-foreground transition-colors">Optimizar para local</span>
+                      <span className="text-[10px] text-muted-foreground/80 group-hover:text-muted-foreground transition-colors">{t('structurePlanOptimizeLocal')}</span>
                     </label>
                     <button
                       onClick={handleImproveDescription}
                       disabled={isImprovingDescription || !description.trim()}
-                      title="Mejorar descripción con IA"
+                      title={t('structurePlanImproveTitle')}
                       className="flex items-center gap-1.5 px-2 py-1 bg-primary/30 hover:bg-primary/50 border border-blue-800 rounded-md text-[11px] text-primary transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
                     >
                       {isImprovingDescription ? (
@@ -1397,12 +1400,12 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                       ) : (
                         <Wand2 className="w-3.5 h-3.5 group-hover:rotate-12 transition-transform" />
                       )}
-                      Mejorar con IA
+                      {t('structurePlanImproveWithAI')}
                     </button>
                   </div>
                 </div>
                 <textarea
-                  placeholder="Describe el propósito de este proyecto..."
+                  placeholder={t('structurePlanDescriptionPlaceholder')}
                   rows={4}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -1411,14 +1414,14 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Número de Etapas</label>
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{t('structurePlanNumStages')}</label>
                 <div className="relative" ref={stageDropdownRef}>
                   <button
                     type="button"
                     onClick={() => setIsStageDropdownOpen((prev) => !prev)}
                     className="w-full bg-card border border-border/50 rounded-lg px-4 py-3 text-sm text-foreground outline-none focus:border-success transition-all text-left flex items-center justify-between"
                   >
-                    <span>{stages ? `${stages} Etapas` : 'Seleccionar cantidad de etapas...'}</span>
+                    <span>{stages ? t('structurePlanStagesSelected').replace('{count}', stages) : t('structurePlanSelectStagesCount')}</span>
                     <span className="text-muted-foreground/80">▾</span>
                   </button>
 
@@ -1438,7 +1441,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                               : 'text-foreground/70 hover:bg-muted'
                           }`}
                         >
-                          {count} {count === 1 ? 'Etapa' : 'Etapas'}
+                          {count} {count === 1 ? t('structurePlanStageSingular') : t('structurePlanStagePlural')}
                         </button>
                       ))}
                     </div>
@@ -1447,10 +1450,10 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
               </div>
 
               <div className="space-y-3">
-                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Modelos</p>
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{t('structurePlanModels')}</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-[11px] text-muted-foreground/80">Modelo para generar plan</label>
+                    <label className="text-[11px] text-muted-foreground/80">{t('structurePlanPlanModel')}</label>
                     <div className="relative" ref={planModelDropdownRef}>
                       <button
                         type="button"
@@ -1465,7 +1468,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                         <span className="truncate">
                           {models?.length
                             ? getModelNameById(effectivePlanModelId)
-                            : 'No hay modelos disponibles'}
+                            : t('structurePlanNoModelsAvailable')}
                         </span>
                         <span className="text-muted-foreground/80 ml-2">▾</span>
                       </button>
@@ -1495,7 +1498,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-[11px] text-muted-foreground/80">Modelo para ejecutar etapas</label>
+                    <label className="text-[11px] text-muted-foreground/80">{t('structurePlanExecutionModel')}</label>
                     <div className="relative" ref={executionModelDropdownRef}>
                       <button
                         type="button"
@@ -1510,7 +1513,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                         <span className="truncate">
                           {models?.length
                             ? getModelNameById(effectiveExecutionModelId)
-                            : 'No hay modelos disponibles'}
+                            : t('structurePlanNoModelsAvailable')}
                         </span>
                         <span className="text-muted-foreground/80 ml-2">▾</span>
                       </button>
@@ -1542,10 +1545,10 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
               </div>
 
               <div className="space-y-3">
-                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Configuración del Modelo (Ejecución por Etapa)</p>
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">{t('structurePlanModelConfig')}</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-[11px] text-muted-foreground/80">Tokens planning</label>
+                    <label className="text-[11px] text-muted-foreground/80">{t('structurePlanTokensPlanning')}</label>
                     <input
                       type="number"
                       min={100}
@@ -1559,7 +1562,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[11px] text-muted-foreground/80">Tokens por archivo</label>
+                    <label className="text-[11px] text-muted-foreground/80">{t('structurePlanTokensFile')}</label>
                     <input
                       type="number"
                       min={200}
@@ -1573,7 +1576,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[11px] text-muted-foreground/80">Tokens respuesta final</label>
+                    <label className="text-[11px] text-muted-foreground/80">{t('structurePlanTokensFinal')}</label>
                     <input
                       type="number"
                       min={100}
@@ -1587,7 +1590,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[11px] text-muted-foreground/80">Máx. caracteres por archivo</label>
+                    <label className="text-[11px] text-muted-foreground/80">{t('structurePlanMaxChars')}</label>
                     <input
                       type="number"
                       min={2000}
@@ -1618,10 +1621,10 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                   {isLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Generando plan...
+                      {t('structurePlanGenerating')}
                     </>
                   ) : (
-                    'Generar Plan'
+                    t('structurePlanGenerateBtn')
                   )}
                 </button>
               </div>
@@ -1639,7 +1642,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                       disabled={isLoading}
                       className="px-4 py-2 bg-success hover:bg-success disabled:bg-success/80 disabled:cursor-not-allowed text-foreground rounded-lg text-sm font-medium transition-all"
                     >
-                      Reanudar desde etapa {streamingPlan.stages.length + 1}
+                      {t('structurePlanResumeFrom').replace('{n}', String(streamingPlan.stages.length + 1))}
                     </button>
                   )}
                   <button
@@ -1652,13 +1655,13 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                     }}
                     className="px-4 py-2 bg-card hover:bg-muted text-foreground/70 rounded-lg text-sm font-medium transition-all"
                   >
-                    Nuevo Plan
+                    {t('structurePlanNewPlan')}
                   </button>
                 </div>
               </div>
               
               <div className="mb-6">
-                <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">Descripción del Proyecto</p>
+                <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">{t('structurePlanProjectDescription')}</p>
                 <div className="bg-input border border-border/40 rounded-lg p-4 max-h-40 overflow-y-auto custom-scrollbar">
                   <p className="text-muted-foreground text-sm whitespace-pre-wrap">{streamingPlan.description}</p>
                 </div>
@@ -1667,7 +1670,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
               {/* Mostrar estructura del proyecto como árbol */}
               {streamingPlan.structure && (
                 <div className="mb-6">
-                  <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">Estructura del Proyecto</p>
+                  <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">{t('structurePlanProjectStructure')}</p>
                   <div className="bg-input border border-border/40 rounded-lg p-4">
                     {streamingPlan.structure.overview && (
                       <p className="text-xs text-muted-foreground mb-3">{streamingPlan.structure.overview}</p>
@@ -1680,7 +1683,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                             <FileTreeNode key={name} name={name} node={node} />
                           ))
                         ) : (
-                          <p className="text-[10px] text-muted-foreground/60 italic">No se definió estructura</p>
+                          <p className="text-[10px] text-muted-foreground/60 italic">{t('structurePlanNoStructure')}</p>
                         );
                       })()}
                     </div>
@@ -1697,11 +1700,11 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                         <span className="w-3 h-3 bg-success rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
                         <span className="w-3 h-3 bg-success rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
                       </div>
-                      <p className="text-muted-foreground text-sm">Generando plan...</p>
+                      <p className="text-muted-foreground text-sm">{t('structurePlanGenerating')}</p>
                     </div>
                   ) : (
                     <div className="bg-input border border-border/40 rounded-lg p-3 flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">Generando siguientes etapas...</span>
+                      <span className="text-xs text-muted-foreground">{t('structurePlanGeneratingNext')}</span>
                       <div className="flex gap-1.5">
                         <span className="w-2 h-2 bg-success rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
                         <span className="w-2 h-2 bg-success rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
@@ -1720,7 +1723,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                         </div>
                         <div>
                           <h4 className="text-foreground font-bold text-lg">{stage.name}</h4>
-                          <p className="text-xs text-muted-foreground/80 uppercase tracking-widest">Etapa {stage.number}</p>
+                          <p className="text-xs text-muted-foreground/80 uppercase tracking-widest">{t('structurePlanStageNumber').replace('{n}', String(stage.number))}</p>
                         </div>
                         {stage.isStreaming && (
                           <Loader2 className="w-4 h-4 text-success animate-spin ml-2" />
@@ -1732,21 +1735,21 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                             onClick={() => handleStopStageExecution(index)}
                             className="px-4 py-2 bg-destructive hover:bg-destructive text-foreground rounded-lg text-sm font-medium transition-all flex items-center gap-2"
                           >
-                            STOP
+                            {t('structurePlanStop')}
                           </button>
                         ) : (
                           <div className="flex items-center gap-2">
                             {stage.executionCompleted && (
                               <span className="px-2 py-1 bg-success/30 border border-success rounded text-success text-xs font-medium flex items-center gap-1">
                                 <Check className="w-3.5 h-3.5" />
-                                OK
+                                {t('structurePlanOK')}
                               </span>
                             )}
                             <button
                               onClick={() => handleExecuteStage(index)}
                               className="px-4 py-2 bg-success hover:bg-success text-foreground rounded-lg text-sm font-medium transition-all flex items-center gap-2"
                             >
-                              Ejecutar
+                              {t('structurePlanExecute')}
                             </button>
                           </div>
                         )
@@ -1760,13 +1763,13 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                     ) : (
                       <div className="space-y-4 ml-13">
                         <div>
-                          <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">Objetivo</p>
+                          <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">{t('structurePlanObjective')}</p>
                           <p className="text-sm text-foreground/70">{stage.objective}</p>
                         </div>
                         
                         {stage.tasks && stage.tasks.length > 0 && (
                           <div>
-                            <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">Tareas</p>
+                            <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">{t('structurePlanTasks')}</p>
                             <ul className="space-y-2">
                               {stage.tasks.map((task: string, taskIndex: number) => (
                                 <li key={taskIndex} className="text-sm text-muted-foreground flex items-start gap-2">
@@ -1779,7 +1782,7 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                         )}
                         
                         <div>
-                          <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">Archivos</p>
+                          <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">{t('structurePlanFiles')}</p>
                           {stage.files && stage.files.length > 0 ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                               {stage.files.map((file: string | { path: string; created: boolean }, fileIndex: number) => {
@@ -1805,13 +1808,13 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                               })}
                             </div>
                           ) : (
-                            <p className="text-xs text-muted-foreground/60 italic">Sin archivos asignados</p>
+                            <p className="text-xs text-muted-foreground/60 italic">{t('structurePlanNoFiles')}</p>
                           )}
                         </div>
                         
                         {stage.dependencies && stage.dependencies.length > 0 && (
                           <div>
-                            <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">Dependencias</p>
+                            <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">{t('structurePlanDependencies')}</p>
                             <div className="flex flex-wrap gap-2">
                               {stage.dependencies.map((dep: string, depIndex: number) => (
                                 <span key={depIndex} className="px-3 py-1.5 bg-primary/30 border border-blue-800 rounded text-xs text-primary">
@@ -1834,10 +1837,10 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                             >
                               <span className="flex items-center gap-2">
                                 <span className="w-2 h-2 bg-success rounded-full"></span>
-                                Resultado de Ejecución
+                                {t('structurePlanExecResult')}
                                 {stage.isExecuting && stage.executionResult.currentFile && (
                                   <span className="ml-2 text-success text-xs normal-case tracking-normal">
-                                    Generando: {stage.executionResult.currentFile}
+                                    {t('structurePlanGeneratingFile').replace('{file}', stage.executionResult.currentFile)}
                                   </span>
                                 )}
                               </span>
@@ -1851,21 +1854,21 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                             {expandedExecutionResults[stage.number] && (
                               stage.executionResult.raw ? (
                                 <div className="bg-input border border-border/40 rounded-lg p-4">
-                                  <p className="text-xs text-muted-foreground/80 mb-2">Respuesta del modelo:</p>
+                                  <p className="text-xs text-muted-foreground/80 mb-2">{t('structurePlanModelResponse')}</p>
                                   <pre className="text-sm text-foreground/70 whitespace-pre-wrap">{stage.executionResult.raw}</pre>
                                 </div>
                               ) : (
                                 <div className="space-y-4">
                                   {stage.executionResult.summary && (
                                     <div>
-                                      <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">Resumen</p>
+                                      <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">{t('structurePlanSummary')}</p>
                                       <p className="text-sm text-foreground/70">{stage.executionResult.summary}</p>
                                     </div>
                                   )}
 
                                   {stage.executionResult.files && stage.executionResult.files.length > 0 && (
                                     <div>
-                                      <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">Archivos Generados</p>
+                                      <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">{t('structurePlanGeneratedFiles')}</p>
                                       <div className="space-y-3">
                                         {stage.executionResult.files.map((file: any, fileIndex: number) => (
                                           <div
@@ -1877,13 +1880,13 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
                                               <div className="mb-2 text-[11px]">
                                                 {file.persisted.saved ? (
                                                   <div className="text-success space-y-1">
-                                                    <p>✅ Guardado en plan: <span className="font-mono">{file.persisted.planName}</span></p>
+                                                    <p>✅ {t('structurePlanSavedInPlan').replace('{name}', file.persisted.planName)}</p>
                                                     {file.persisted.taskResult?.result?.path && (
-                                                      <p className="text-muted-foreground">Ruta real: <span className="font-mono">{file.persisted.taskResult.result.path}</span></p>
+                                                      <p className="text-muted-foreground">{t('structurePlanRealPath').replace('{path}', file.persisted.taskResult.result.path)}</p>
                                                     )}
                                                   </div>
                                                 ) : (
-                                                  <p className="text-rose-400">⚠️ No se pudo persistir: {file.persisted.error}</p>
+                                                  <p className="text-rose-400">⚠️ {t('structurePlanPersistError').replace('{error}', file.persisted.error)}</p>
                                                 )}
                                               </div>
                                             )}
@@ -1896,14 +1899,14 @@ export default function StructurePlanTab({ plans = [], setPlans }: StructurePlan
 
                                   {stage.executionResult.explanation && (
                                     <div>
-                                      <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">Explicación</p>
+                                      <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">{t('structurePlanExplanation')}</p>
                                       <p className="text-sm text-foreground/70 whitespace-pre-wrap">{stage.executionResult.explanation}</p>
                                     </div>
                                   )}
 
                                   {stage.executionResult.nextSteps && stage.executionResult.nextSteps.length > 0 && (
                                     <div>
-                                      <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">Próximos Pasos</p>
+                                      <p className="text-xs font-bold text-muted-foreground/80 uppercase tracking-widest mb-2">{t('structurePlanNextSteps')}</p>
                                       <ul className="space-y-1">
                                         {stage.executionResult.nextSteps.map((step: string, stepIndex: number) => (
                                           <li key={stepIndex} className="text-sm text-muted-foreground flex items-start gap-2">

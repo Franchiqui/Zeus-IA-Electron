@@ -3,12 +3,11 @@
 import { useEffect } from 'react';
 import './globals.css';
 import '../components/styles.css';
-import { Inter } from 'next/font/google';
+import { audiowide } from '@/lib/fonts';
+import Script from 'next/script';
 
 import { Providers } from '@/components/Providers';
 import { ComponentSelectorHelper } from '@/components/component-selector-helper';
-
-const inter = Inter({ subsets: ['latin'] });
 
 export default function RootLayout({
   children,
@@ -34,11 +33,12 @@ export default function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning className="h-full">
-      <body className={`${inter.className} h-full overflow-hidden`}>
+      <body className={`${audiowide.variable} h-full overflow-hidden`}>
         <Providers>
           <ComponentSelectorHelper />
           {children}
         </Providers>
+              <Script src="http://localhost:8744/inspector-client.js" strategy="afterInteractive" />
       </body>
     </html>
   );

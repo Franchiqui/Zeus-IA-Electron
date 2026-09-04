@@ -80,9 +80,9 @@ export default function MonacoEditor({
     } else {
       // Tema no disponible (probablemente de extensión no cargada aún)
       console.warn('[MonacoEditor] Tema no disponible:', themeToApply, 'Temas conocidos:', knownThemes);
-      // Usar zeus-dark como fallback
-      monaco.editor.setTheme('zeus-dark');
-      lastAppliedThemeRef.current = 'zeus-dark';
+      // Usar dark-blue como fallback
+      monaco.editor.setTheme('dark-blue');
+      lastAppliedThemeRef.current = 'dark-blue';
     }
   };
 
@@ -90,6 +90,10 @@ export default function MonacoEditor({
     editorRef.current = editor;
     monacoRef.current = monaco;
     console.log('[MonacoEditor] montado. monaco id:', monaco?.editor ? 'ok' : 'no');
+
+    // Aplicar dark-blue inmediatamente para evitar flash blanco
+    monaco.editor.setTheme('dark-blue');
+    lastAppliedThemeRef.current = 'dark-blue';
 
     // Inicializar Zeus Monaco y cargar extensiones antes de aplicar el tema
     // Importación dinámica para evitar SSR con Monaco
@@ -104,8 +108,7 @@ export default function MonacoEditor({
       await applyStoredTheme(monaco, true);
     } catch (err) {
       console.warn('[MonacoEditor] Error inicializando:', err);
-      // Fallback a zeus-dark
-      monaco.editor.setTheme('zeus-dark');
+      // Ya está en dark-blue por defecto
     }
 
     if (disableDiagnostics) {

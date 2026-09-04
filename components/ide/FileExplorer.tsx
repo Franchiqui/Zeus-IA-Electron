@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/lib/store';
+import { sessionFetch } from '@/lib/projectStore';
 import { useTranslation } from '@/contexts/translation-context';
 
 interface FileSystemItem {
@@ -116,9 +117,9 @@ export default function FileExplorer({ onFileSelect, currentPath, setCurrentPath
     setIsLoading(true);
     try {
       const [foldersResponse, filesResponse, gitStatusResponse] = await Promise.all([
-        fetch(`/api/ide-files?path=${encodeURIComponent(folderPath)}&type=folders`),
-        fetch(`/api/ide-files?path=${encodeURIComponent(folderPath)}&type=files`),
-        fetch(`/api/git/status?path=${encodeURIComponent(folderPath)}`).catch(() => null)
+        sessionFetch(`/api/ide-files?path=${encodeURIComponent(folderPath)}&type=folders`),
+        sessionFetch(`/api/ide-files?path=${encodeURIComponent(folderPath)}&type=files`),
+        sessionFetch(`/api/git/status?path=${encodeURIComponent(folderPath)}`).catch(() => null)
       ]);
 
       const foldersResult = await foldersResponse.json();
@@ -251,7 +252,7 @@ export default function FileExplorer({ onFileSelect, currentPath, setCurrentPath
   }, []);
 
   const executeCreateFolder = useCallback(async (folderName: string) => {
-    const response = await fetch('/api/ide-files', {
+    const response = await sessionFetch('/api/ide-files', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -277,7 +278,7 @@ export default function FileExplorer({ onFileSelect, currentPath, setCurrentPath
   }, []);
 
   const executeCreateFile = useCallback(async (fileName: string) => {
-    const response = await fetch('/api/ide-files', {
+    const response = await sessionFetch('/api/ide-files', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -306,7 +307,7 @@ export default function FileExplorer({ onFileSelect, currentPath, setCurrentPath
   const executeRenameItem = useCallback(async (item: FileSystemItem, newName: string) => {
     const { name, parentPath } = splitItemPath(item.path);
 
-    const response = await fetch('/api/ide-files', {
+    const response = await sessionFetch('/api/ide-files', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -345,7 +346,7 @@ export default function FileExplorer({ onFileSelect, currentPath, setCurrentPath
 
     // Fallback para modo web
     const { name, parentPath } = splitItemPath(item.path);
-    const response = await fetch(`/api/ide-files?name=${encodeURIComponent(name)}&path=${encodeURIComponent(parentPath)}`, {
+    const response = await sessionFetch(`/api/ide-files?name=${encodeURIComponent(name)}&path=${encodeURIComponent(parentPath)}`, {
       method: 'DELETE'
     });
 

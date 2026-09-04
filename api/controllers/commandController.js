@@ -1,18 +1,24 @@
 const { exec } = require('child_process');
 const path = require('path');
+const { getSessionCwd } = require('../middleware/sessionCwd');
 
-const getDataDir = () => require('../config').DATA_DIR;
+const getDataDir = (req) => getSessionCwd(req);
 
 const commandController = {
   runCommand: async (req, res) => {
     const { command, path: subPath } = req.body;
-    
+
     if (!command) {
       return res.status(400).json({ error: 'No se proporcionó ningún comando' });
     }
 
-    // Ejecutar en la carpeta de datos o en una subcarpeta si se especifica
-    const workingDir = subPath ? path.join(getDataDir(), subPath) : getDataDir();
+    const cwd = getDataDir(req);
+    if (!cwd) {
+      return res.status(400).json({ error: 'No hay sesión activa. Selecciona una carpeta de proyecto.' });
+    }
+
+    // Ejecutar en la carpeta de la sesión o en una subcarpeta si se especifica
+    const workingDir = subPath ? path.join(cwd, subPath) : cwd;
 
     console.log(`[ZEUS COMMAND] Ejecutando: "${command}" en ${workingDir}`);
 

@@ -27,6 +27,7 @@ import { useAuth } from '@/context/AuthContext';
 import { getPocketBase } from '../../lib/pocketbase';
 import JSZip from 'jszip';
 import { toast } from '../../hooks/use-toast';
+import { sessionFetch } from '@/lib/projectStore';
 
 interface ProjectLoaderProps {
     open: boolean;
@@ -290,7 +291,7 @@ const handleLoadNextJSProject = async (repo: GitHubRepo) => {
         description: `Descargando y extrayendo: ${repo.name}...`
       });
         
-      const response = await fetch('/api/github-load', {
+      const response = await sessionFetch('/api/github-load', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

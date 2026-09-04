@@ -1,0 +1,7 @@
+◇ injected env (21) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+✓ GET /api/plans/list registrado
+✓ GET /api/data registrado
+✓ GET /api/plan/tasks registrado
+✓ GET /api/structure/list registrado
+Servidor Express corriendo en el puerto 8742
+Rutas de plan y corrección activas en /api/plan

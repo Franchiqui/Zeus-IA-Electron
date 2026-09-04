@@ -8,6 +8,7 @@ import pb from '@/lib/pocketbase';
 import { useStore } from '@/lib/store';
 import { motion, AnimatePresence } from 'framer-motion';
 import { type ChatMessage, useChatContext } from '@/components/ChatContext';
+import { ToolCallDisplay, type ToolLogEntry } from '@/components/chat/ToolCallDisplay';
 import { cleanTextForTTS } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import { useEditor, type CorrectionChange, type PendingCorrection } from '@/context/editor-context';
@@ -17,9 +18,17 @@ import ChatTerminalBubble from './ChatTerminalBubble';
 import ChatCodeBubble from './ChatCodeBubble';
 import { ApiConfigModal } from './ApiConfigModal';
 import { MODELOS_COLLECTION_NAME } from '@/lib/collections';
+import { getActiveSessionId, getActiveProjectId, useProjectStore, sessionFetch } from '@/lib/projectStore';
 
 type ApiCallResult = { success: boolean; text: string; blobUrl?: string; mimeType?: string; mediaType?: 'image' | 'video' | 'audio' | 'gif' };
 type MessageCodeBubble = { code: string; language: string; fileName: string; isVisible: boolean };
+
+// Tamaño máximo (en caracteres) del contenido de un archivo que se devuelve
+// INLINE al modelo al leerlo por la API. Por encima de este umbral no se
+// trunca (eso perdería información): se devuelve metadata + instrucciones
+// para que el modelo lea el archivo POR PARTES con /files/{name}/lines.
+// 100 000 chars ≈ 25k tokens: cubre archivos normales sin saturar el contexto.
+const MAX_INLINE_FILE_CONTENT_CHARS = 100_000;
 
 function inferLanguageFromName(name: string): string {
   const ext = name.split('.').pop()?.toLowerCase() || '';
@@ -477,6 +486,12 @@ async function executeZeusApiCall(callDef: {
 
   const options: RequestInit = { method };
 
+  // Anclar la llamada al cwd de la sesión activa (header X-Zeus-Session).
+  const sid = getActiveSessionId();
+  if (sid) {
+    options.headers = { ...(options.headers as Record<string, string> || {}), 'X-Zeus-Session': sid };
+  }
+
   if (['POST', 'PUT', 'PATCH'].includes(method) && callDef.body) {
     if (callDef.isFormData) {
       const fd = new FormData();
@@ -491,7 +506,7 @@ async function executeZeusApiCall(callDef: {
       }
 
       // Usar JSON por defecto para mejor compatibilidad con Express/PocketBase
-      options.headers = { 'Content-Type': 'application/json' };
+      options.headers = { ...(options.headers as Record<string, string> || {}), 'Content-Type': 'application/json' };
       options.body = JSON.stringify(callDef.body);
     }
   }
@@ -510,6 +525,32 @@ async function executeZeusApiCall(callDef: {
     }
     if (ct.includes('application/json')) {
       const data = await res.json();
+      // Lectura de archivo: si el contenido es enorme, NO se vuelca entero
+      // (saturaría el contexto) ni se trunca (perdería información). Se
+      // sustituye por metadata + instrucciones para leer POR PARTES con
+      // /files/{name}/lines, conservando acceso a toda la información.
+      if (data && typeof data === 'object' && typeof data.content === 'string'
+          && data.content.length > MAX_INLINE_FILE_CONTENT_CHARS) {
+        const fileContent: string = data.content;
+        const totalLines = fileContent.split('\n').length;
+        const fileName = typeof data.name === 'string' ? data.name : '';
+        const filePath = typeof data.path === 'string' ? data.path : '';
+        const size = typeof data.size === 'number' ? data.size : fileContent.length;
+        const note =
+          `[ARCHIVO GRANDE — contenido NO incluido para no saturar tu contexto. ` +
+          `Total: ${totalLines} líneas, ${fileContent.length} caracteres. ` +
+          `Léelo por partes con GET /api/files/${fileName}/lines?path=${filePath}&startLine=1&endLine=200 ` +
+          `(avanza en bloques de ~200 líneas hasta llegar a ${totalLines}) ` +
+          `o con /api/files/${fileName}/lines/list para ver todas las líneas numeradas. ` +
+          `Así accedes a TODA la información sin truncamiento.]`;
+        const summarized = {
+          ...data,
+          content: note,
+          size,
+          totalLines,
+        };
+        return { success: res.ok, text: JSON.stringify(summarized, null, 2) };
+      }
       return { success: res.ok, text: JSON.stringify(data, null, 2) };
     }
     return { success: res.ok, text: (await res.text()) || '(respuesta vacía)' };
@@ -608,6 +649,23 @@ function renderMessageContent(
   }).join('\n');
   // Colapsar múltiples saltos de línea
   cleanedContent = cleanedContent.replace(/\n{3,}/g, '\n\n');
+
+  // Filtrar bloques [ZEUS_API_CALL]: en el chat solo se muestra la descripción,
+  // nunca el objeto JSON completo. También se eliminan los marcadores de estado.
+  cleanedContent = cleanedContent
+    .replace(
+      /\[ZEUS_API_CALL\][\s\S]*?(?=\[ZEUS_API_CALL\]|\[\/ZEUS_API_CALL\]|\[TERMINAL_COMMAND\]|$)/g,
+      (match) => {
+        const jsonPart = match.replace(/^\[ZEUS_API_CALL\]/, '');
+        const parsed = safeJsonParse(jsonPart);
+        const desc = parsed && typeof parsed.description === 'string' ? parsed.description.trim() : '';
+        return desc ? `\n[ZEUS_ACTION]${desc}[/ZEUS_ACTION]\n` : '';
+      }
+    )
+    .replace(/\[\/ZEUS_API_CALL\]/g, '')
+    .replace(/\[CONTINUAR\]/gi, '')
+    .replace(/\[FIN\]/gi, '')
+    .replace(/\n{3,}/g, '\n\n');
 
   // Procesar bloques de comando de terminal primero para manejarlos de forma especial
   const parts = cleanedContent.split(/(\[TERMINAL_COMMAND\][\s\S]*?\[\/TERMINAL_COMMAND\])/g);
@@ -757,6 +815,19 @@ function renderMessageContent(
         if (imgMatch) {
           nodes.push(
             <img key={keyIdx++} src={imgMatch[1]} alt="resultado" className="max-w-full h-auto rounded-lg mt-2 border border-border/40" />
+          );
+          i++;
+          continue;
+        }
+
+        // Descripción de acción Zeus (de bloques [ZEUS_API_CALL] filtrados)
+        const zeusActionMatch = line.match(/^\[ZEUS_ACTION\]([\s\S]*?)\[\/ZEUS_ACTION\]$/);
+        if (zeusActionMatch) {
+          nodes.push(
+            <div key={keyIdx++} className="my-2 px-3 py-2 rounded-lg border border-amber-400/30 bg-amber-400/5 flex items-center gap-2 text-xs text-amber-300 break-words">
+              <span className="shrink-0">▸</span>
+              <span className="break-words">{zeusActionMatch[1]}</span>
+            </div>
           );
           i++;
           continue;
@@ -1574,7 +1645,7 @@ export function FloatingChatButton() {
 
       if (!voiceRef.current && voices.length > 0) {
         // Preferencia: Voces en español populares o la primera disponible
-        const es = voices.find((v) => v.lang.startsWith('es') && /helena|monica|laura|paulina|conchita/i.test(v.name)) 
+        const es = voices.find((v) => v.lang.startsWith('es') && /alvaro|helena|monica|laura|paulina|conchita/i.test(v.name)) 
                 || voices.find((v) => v.lang.startsWith('es'))
                 || voices[0];
         
@@ -1619,6 +1690,53 @@ export function FloatingChatButton() {
     }
   }, []);
 
+  // Flag: ¿el usuario ha subido manualmente (wheel/touch hacia arriba)?
+  const userScrolledUpRef = useRef(false);
+
+  // Detectar la INTENCIÓN del usuario:
+  //  - rueda/gesto hacia arriba → quiere leer algo más arriba → pausar auto-scroll
+  //  - vuelve al fondo → reanudar auto-scroll
+  useEffect(() => {
+    const container = messagesEndRef.current?.parentElement;
+    if (!container || !open) return;
+
+    const onScroll = () => {
+      const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40;
+      if (atBottom) userScrolledUpRef.current = false;
+    };
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) userScrolledUpRef.current = true;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const touch = e.touches?.[0];
+      if (touch && touch.clientY > 0) {
+        // Detectar arrastre hacia abajo (subir contenido): comparar con la posición previa
+        const prev = lastTouchYRef.current ?? touch.clientY;
+        if (touch.clientY > prev) userScrolledUpRef.current = true;
+        lastTouchYRef.current = touch.clientY;
+      }
+    };
+    const lastTouchYRef = { current: 0 };
+
+    container.addEventListener('scroll', onScroll);
+    container.addEventListener('wheel', onWheel, { passive: true });
+    container.addEventListener('touchmove', onTouchMove, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', onScroll);
+      container.removeEventListener('wheel', onWheel);
+      container.removeEventListener('touchmove', onTouchMove);
+    };
+  }, [open]);
+
+  // Scroll automático: baja SIEMPRE que el usuario NO haya subido manualmente.
+  // Si subió para leer, se respeta su posición hasta que vuelva al fondo.
+  const smartScrollToBottom = useCallback(() => {
+    const end = messagesEndRef.current;
+    if (!end) return;
+    if (userScrolledUpRef.current) return; // usuario subió → no forzar
+    end.scrollIntoView({ behavior: 'auto' });
+  }, []);
+
   const copyChatSelection = () => {
     console.log('copyChatSelection called');
     const selection = window.getSelection();
@@ -1650,13 +1768,15 @@ export function FloatingChatButton() {
     }
   }, [open, scrollToBottom]);
 
-  // Scroll cuando cambian los mensajes o el estado de carga
+  // Scroll cuando cambian los mensajes o el estado de carga.
+  // Usa la versión INTELIGENTE: si el usuario subió para leer, no le fuerza
+  // el scroll hacia abajo mientras el modelo escribe.
   useEffect(() => {
-    scrollToBottom();
+    smartScrollToBottom();
     // Pequeño delay para asegurar que el DOM se ha actualizado tras el renderizado de componentes complejos
-    const timer = setTimeout(scrollToBottom, 50);
+    const timer = setTimeout(smartScrollToBottom, 50);
     return () => clearTimeout(timer);
-  }, [messages, loading, showTerminal, messageCodeBubbles, scrollToBottom]);
+  }, [messages, loading, showTerminal, messageCodeBubbles, smartScrollToBottom]);
 
   // Restaurar burbujas de código desde metadata persistida al recargar conversación.
   useEffect(() => {
@@ -1728,7 +1848,9 @@ export function FloatingChatButton() {
       ? 'Deepseek'
       : providerRaw.includes('ollama')
         ? 'Ollama'
-        : 'OpenAI';
+        : (providerRaw.includes('lm studio') || providerRaw === 'local')
+          ? 'LM Studio'
+          : 'OpenAI';
   const modelId = (selectedModel?.model_name as string) || (selectedModel?.name as string) || 'gpt-4';
   const modelStreamEnabled = selectedModel?.config?.stream === true || (selectedModel as { stream?: boolean })?.stream === true;
   const streamEnabled = isStreamingEnabled || modelStreamEnabled;
@@ -1764,6 +1886,18 @@ export function FloatingChatButton() {
     stopSpeaking();
     setSpeakingIndex(null);
   };
+
+  // Limpiar el intervalo de playback al desmontar.
+  // Sin esto, un hot-reload deja el setInterval anterior vivo disparando
+  // setMessages sobre una instancia obsoleta -> "Maximum update depth exceeded".
+  useEffect(() => {
+    return () => {
+      if (currentPlaybackIntervalRef.current) {
+        clearInterval(currentPlaybackIntervalRef.current);
+        currentPlaybackIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   const getAuthHeaders = useCallback(() => {
     let headers: Record<string, string> = {
@@ -1930,7 +2064,7 @@ export function FloatingChatButton() {
   // Función para obtener el esquema del directorio DATA_PATH
   const getDirectorySchema = async () => {
     try {
-      const response = await fetch('/api/schema/simple');
+      const response = await sessionFetch('/api/schema/simple');
       if (!response.ok) {
         console.error('Error al obtener esquema:', response.statusText);
         return null;
@@ -2006,7 +2140,7 @@ export function FloatingChatButton() {
         // Probar cada candidato
         for (const candidatePath of candidates) {
           try {
-            const getRes = await fetch(`/api/ide-files?name=${encodeURIComponent(fileName)}&path=${encodeURIComponent(candidatePath)}`);
+            const getRes = await sessionFetch(`/api/ide-files?name=${encodeURIComponent(fileName)}&path=${encodeURIComponent(candidatePath)}`);
             const getResult = await getRes.json();
             if (getRes.ok && getResult?.success) {
               resolvedFilePath = candidatePath;
@@ -2096,6 +2230,19 @@ export function FloatingChatButton() {
     const text = input.trim();
     const hasContent = text || attachedFiles.length > 0;
     if (!hasContent) return;
+
+    // Verificar autenticación antes de enviar
+    if (!authUser) {
+      const userMsg = createChatMessage('user', text);
+      const assistantMsg = createChatMessage('assistant',
+        '⚠️ **No hay sesión activa.**\n\nPara usar el chat debes iniciar sesión primero:\n\n1. Pulsa el botón **⚙️** (configuración) en la barra superior\n2. Ve a la pestaña **Usuario**\n3. Inicia sesión con tu email y contraseña\n\nSi no tienes cuenta, puedes registrarte ahí mismo.'
+      );
+      setMessages((m) => [...m, userMsg, assistantMsg]);
+      setInput('');
+      setAttachedFiles([]);
+      return;
+    }
+
     if (!selectedModel) {
       const userReminder = createChatMessage('user', text + (attachedFiles.length ? ` [Adjuntos: ${attachedFiles.map((f) => f.name).join(', ')}]` : ''));
       const assistantReminder = createChatMessage('assistant', t('selectModelToChat'));
@@ -2347,7 +2494,7 @@ No se pudo obtener el esquema del directorio. El modelo no tendrá acceso a la e
 
       for (const candidatePath of candidatePaths) {
         try {
-          const getRes = await fetch(`/api/ide-files?name=${encodeURIComponent(fileName)}&path=${encodeURIComponent(candidatePath)}`);
+          const getRes = await sessionFetch(`/api/ide-files?name=${encodeURIComponent(fileName)}&path=${encodeURIComponent(candidatePath)}`);
           const getResult = await getRes.json();
 
           if (getRes.ok && getResult?.success) {
@@ -2400,11 +2547,12 @@ TODAS las peticiones deben enviarse en formato: application/x-www-form-urlencode
 5. Si necesitas ejecutar algo en la consola (instalar paquetes, inicializar git, mover archivos del sistema), usa [TERMINAL_COMMAND]comando[/TERMINAL_COMMAND].
 6. **IMPORTANTE**: Pon CADA comando en su propio bloque [TERMINAL_COMMAND] por separado. No los agrupes.
 6b. **NUNCA uses &&, ||, ; ni redirecciones como 2>&1 dentro de un bloque [TERMINAL_COMMAND]**. El terminal ejecuta los comandos de uno en uno y no admite operadores de encadenamiento. Si necesitas cambiar de directorio y ejecutar un comando, envía PRIMERO [TERMINAL_COMMAND]cd ruta[/TERMINAL_COMMAND] y DESPUÉS en otro bloque separado [TERMINAL_COMMAND]comando[/TERMINAL_COMMAND]. NO añadas 2>&1 — el terminal captura la salida automáticamente.
-7. **REGLA DE ORO: LEER ANTES DE MODIFICAR**: Si el usuario te pide modificar un archivo que **NO** aparece en la sección "ARCHIVOS ABIERTOS ACTUALMENTE" (más abajo), o si no conoces su contenido exacto:
-   - **PRIMERO**: Debes leer el archivo usando [ZEUS_API_CALL]{"method":"GET","url":"/api/files/nombre.ext","params":{"path":"ruta"},"description":"Leyendo archivo para conocer su contenido"}[/ZEUS_API_CALL].
+7. **REGLA DE ORO: LEER ANTES DE MODIFICAR**: No se inyecta automáticamente el contenido de los archivos abiertos en el editor. Antes de modificar CUALQUIER archivo, debes leerlo tú mismo para conocer su contenido exacto.
+   - **PRIMERO**: Lee el archivo con [ZEUS_API_CALL]{"method":"GET","url":"/api/files/nombre.ext","params":{"path":"ruta"},"description":"Leyendo archivo para conocer su contenido"}[/ZEUS_API_CALL]. Recibirás el contenido **COMPLETO** (nunca truncado).
+   - **ARCHIVOS GRANDES**: Si al leer un archivo la respuesta indica que es muy grande (contiene "ARCHIVO GRANDE" y un total de líneas), NO tienes el contenido inline. Léelo **por partes** con [ZEUS_API_CALL]{"method":"GET","url":"/api/files/nombre.ext/lines","params":{"path":"ruta","startLine":1,"endLine":200},"description":"Leyendo líneas 1-200"}[/ZEUS_API_CALL] y avanza en bloques (startLine=201&endLine=400, etc.) hasta cubrir todo el archivo. También puedes usar /api/files/{name}/lines/list para ver todas las líneas numeradas. Así accedes a TODA la información sin truncamiento.
    - **SEGUNDO**: Añade SIEMPRE el marcador [CONTINUAR] al final.
    - **TERCERO**: Una vez el sistema te devuelva el contenido en el siguiente turno, aplica el \`code_change\` con el texto EXACTO.
-   - **NUNCA** adivines el contenido ni inventes líneas de código para el campo "old". Si no estás seguro del contenido actual, LÉELO primero.
+   - **NUNCA** adivines el contenido ni inventes líneas de código para el campo "old". Si no estás seguro del contenido actual, LÉELO primero (por partes si es grande).
 8. Las líneas empiezan en 1. Los caracteres empiezan en 0.
 9. Siempre especifica el parámetro "path" en todas las operaciones. Todas las rutas son relativas a la carpeta "data/".
 10. Para operaciones que pueden guardarse en un plan en lugar de ejecutarse inmediatamente, usa los parámetros "planName" y "saveToPlan".
@@ -2722,105 +2870,41 @@ Esta regla aplica SOLO para este modelo.
     let currentNextMessageContent = textContent;
     let currentHistory = [...messages.map((msg) => ({ role: msg.role, content: msg.content }))];
 
+    // Una sola burbuja de asistente por mensaje del usuario. Antes esto se
+    // declaraba DENTRO del while, generando un id nuevo en cada iteración de
+    // auto-continue y apilando burbujas vacías una tras otra. Ahora todas las
+    // iteraciones actualizan la misma burbuja. `lastAssistantText` alimenta el
+    // guard anti-bucle (modelo atascado repitiéndose).
+    const assistantMessageId = generateMessageId();
+    let streamingMessageCreated = false;
+    let lastAssistantText = '';
+
     try {
-      const editorSystemContext = contextParts.join('\n\n---\n\n');
+      const projectState = useProjectStore.getState();
+      const activeCwd = projectState.activeCwd || projectState.resolveNewSessionCwd() || '';
+      const cwdSection = activeCwd
+        ? `## DIRECTORIO DE TRABAJO (cwd)\nTodos los paths de archivos son relativos a: ${activeCwd}\nLos [ZEUS_API_CALL] se ejecutan anclados a este directorio (header X-Zeus-Session).\n\n---\n\n`
+        : '';
+      const editorSystemContext = cwdSection + contextParts.join('\n\n---\n\n');
 
-      // Construir contexto de archivos abiertos para que el modelo genere code_change exactos
-      const isLocalModel = selectedModel?.type === 'local' || selectedModel?.is_local === true;
-      const maxFilesContextLength = isLocalModel ? 4000 : 12000;
-      let filesContext = '';
-      
-      // PROACTIVE CONTEXT: Scan textContent for file names mentioned by the user
-      // if they are not in openFiles, try to find them in the schema and fetch them
-      const mentionedFilesToFetch: Array<{name: string, path: string}> = [];
-      if (schemaData?.success && schemaData?.schema && iterations === 0) {
-        const words = textContent.split(/[\s,;()\[\]{}'"]+/);
-        const allFileNamesInSchema: Array<{name: string, path: string}> = [];
-        
-        const walk = (node: any, currentPath: string, isRoot: boolean) => {
-          if (!node || typeof node !== 'object') return;
-          if (node.type === 'file') {
-            allFileNamesInSchema.push({ name: node.name, path: currentPath });
-          } else if (node.type === 'directory') {
-            const nextPath = isRoot ? '' : (currentPath ? `${currentPath}/${node.name}` : node.name);
-            if (Array.isArray(node.children)) {
-              node.children.forEach((child: any) => walk(child, nextPath, false));
-            }
-          }
-        };
-        walk(schemaData.schema, '', true);
-        
-        for (const word of words) {
-          if (word.includes('.') && word.length > 3) {
-            const match = allFileNamesInSchema.find(f => f.name === word || `${f.path}/${f.name}`.endsWith(word));
-            if (match && !openFiles.some(of => of.name === match.name)) {
-              if (!mentionedFilesToFetch.some(m => m.name === match.name)) {
-                mentionedFilesToFetch.push(match);
-              }
-            }
-          }
-        }
-      }
-
-      const filesToInclude = [...openFiles];
-      if (mentionedFilesToFetch.length > 0) {
-        console.log('[proactive-context] Fetching mentioned files:', mentionedFilesToFetch.map(f => f.name));
-        for (const m of mentionedFilesToFetch.slice(0, 3)) { // Limit to 3 proactive fetches
-          try {
-            const res = await fetch(`/api/ide-files?name=${encodeURIComponent(m.name)}&path=${encodeURIComponent(m.path)}`);
-            const data = await res.json();
-            if (res.ok && data?.success) {
-              filesToInclude.push({
-                name: m.name, path: m.path, content: data.content,
-                id: undefined
-              });
-            }
-          } catch (e) {
-            console.warn('[proactive-context] Failed to fetch', m.name, e);
-          }
-        }
-      }
-
-      if (filesToInclude.length > 0 && iterations === 0) {
-        const activeFileName = activeFile ? activeFile.split('/').pop()?.split('\\').pop() : '';
-        // Si el mensaje del usuario menciona un archivo específico, priorizarlo
-        const mentionedFile = filesToInclude.find((f) => textContent.includes(f.name));
-        const prioritized = mentionedFile
-          ? [mentionedFile, ...filesToInclude.filter((f) => f.name !== mentionedFile.name)]
-          : activeFileName
-            ? [
-                ...filesToInclude.filter((f) => f.name === activeFileName),
-                ...filesToInclude.filter((f) => f.name !== activeFileName),
-              ]
-            : filesToInclude;
-
-        const parts: string[] = [];
-        let remaining = maxFilesContextLength;
-        for (const file of prioritized) {
-          if (!file.content || remaining <= 0) continue;
-          const header = `=== ${file.name} ===\n`;
-          const truncated = file.content.length > remaining ? file.content.slice(0, remaining) + '\n... (truncado)' : file.content;
-          const block = header + truncated;
-          parts.push(block);
-          remaining -= block.length;
-        }
-        if (parts.length > 0) {
-          filesContext = `ARCHIVOS ABIERTOS O MENCIONADOS (base tus reemplazos "old" EXACTAMENTE en este contenido):\n\n${parts.join('\n\n')}`;
-        }
-      }
+      // NOTA: Ya NO se inyecta automáticamente el contenido de los archivos
+      // abiertos/mencionados en el mensaje del usuario. Antes esto truncaba el
+      // contenido (pérdida de información) e incluía archivos irrelevantes para
+      // la tarea actual. Ahora el modelo debe leer él mismo los archivos que
+      // necesite con [ZEUS_API_CALL] GET /api/files/{name} (contenido completo,
+      // o por partes con /api/files/{name}/lines si son muy grandes). El
+      // esquema del directorio (estructura, sin contenido) sí se incluye en el
+      // system context, así el modelo sabe qué archivos existen y sus rutas.
 
       while (shouldContinue && iterations < MAX_ITERATIONS) {
         iterations++;
-        const messageWithFiles = iterations === 1 && filesContext
-          ? `${currentNextMessageContent}\n\n${filesContext}`
-          : currentNextMessageContent;
-        const newMessageForApi = { role: 'user' as const, content: messageWithFiles };
+        const newMessageForApi = { role: 'user' as const, content: currentNextMessageContent };
         // Mensaje limpio para mostrar en la UI (sin contexto enriquecido)
         const cleanMessageForUi = { role: 'user' as const, content: currentNextMessageContent };
 
-        const res = await fetch('/api/chat', {
+        const res = await sessionFetch('/api/chat', {
           method: 'POST',
-          headers: getAuthHeaders(),
+          headers: { ...getAuthHeaders() },
           signal: controller.signal,
           body: JSON.stringify({
             provider,
@@ -2828,6 +2912,7 @@ Esta regla aplica SOLO para este modelo.
             modelId: modelId,
             modelRecordId: selectedModel?.id,
             userId: authUser?.id,
+            projectId: getActiveProjectId() || undefined,
             history: currentHistory,
             newMessage: newMessageForApi,
             newMessageClean: cleanMessageForUi,  // Mensaje limpio sin contexto para mostrar en UI
@@ -2836,17 +2921,151 @@ Esta regla aplica SOLO para este modelo.
             title: !currentConversationId ? pendingConversationTitle : undefined,
             systemContext: editorSystemContext,
             webSearch: webSearchEnabled,
-            stream: streamEnabled,
+            // Forzar stream:false siempre — el path de streaming no soporta
+            // tool calls nativas ni procesa bien el systemContext en algunos modelos.
+            stream: false,
           }),
         });
 
         const responseContentType = res.headers.get('content-type') || '';
-        const isSSE = streamEnabled && responseContentType.includes('text/event-stream');
+        // El backend puede responder con SSE (text/event-stream) cuando hay cwd,
+        // emitiendo cada tool a medida que se ejecuta. Detectarlo aquí.
+        const isToolSSE = responseContentType.includes('text/event-stream');
         let assistantText = '';
-        let streamingMessageCreated = false;
-        const assistantMessageId = generateMessageId();
+        let responseToolLog: any[] = [];
 
-        if (isSSE) {
+        if (isToolSSE) {
+          // Procesar SSE de tools: cada evento es { type: 'tool', tool, total } o { type: 'done', text, ... }
+          if (!res.ok) {
+            const errText = await res.text().catch(() => '');
+            throw new Error(errText || 'Error al enviar');
+          }
+
+          // Crear el mensaje del asistente con el assistantMessageId correcto.
+          if (!streamingMessageCreated) {
+            setMessages((m) => [...m, { id: assistantMessageId, role: 'assistant' as const, content: '', type: 'text', createdAt: new Date().toISOString(), toolLog: [] } as any]);
+            streamingMessageCreated = true;
+          }
+
+          const reader = res.body!.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          const liveToolLog: any[] = [];
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || !trimmed.startsWith('data: ')) continue;
+              if (trimmed === 'data: [DONE]') continue;
+              try {
+                const evt = JSON.parse(trimmed.slice(6));
+                if (evt.type === 'tool') {
+                  // Añadir tool al log y actualizar el mensaje.
+                  // El backend envía el tool YA terminado (status final), pero
+                  // para mostrar el spinner "en curso" como F:\Agent, el último
+                  // tool se marca como 'running' mientras el stream continúa.
+                  // Los anteriores conservan su status real.
+                  const incoming = { ...evt.tool };
+                  liveToolLog.push(incoming);
+                  setMessages((prevMsgs) => {
+                    const idx = prevMsgs.findIndex(m => m.id === assistantMessageId);
+                    if (idx !== -1) {
+                      const displayLog = liveToolLog.map((t, ti) =>
+                        ti === liveToolLog.length - 1 ? { ...t, status: 'running' as const } : t
+                      );
+                      prevMsgs[idx] = { ...prevMsgs[idx], toolLog: [...displayLog] };
+                    }
+                    return [...prevMsgs];
+                  });
+                  // Notificar al IDE que un archivo fue modificado por el modelo
+                  // (write_file, delete_file, create_dir) para refrescar editor + preview en tiempo real
+                  const modTool = evt.tool;
+                  if (modTool && modTool.status === 'success') {
+                    const modPaths: string[] = [];
+                    if (modTool.name === 'write_file' || modTool.name === 'delete_file') {
+                      if (modTool.args?.path) modPaths.push(String(modTool.args.path));
+                    } else if (modTool.name === 'create_dir') {
+                      if (modTool.args?.path) modPaths.push(String(modTool.args.path));
+                    }
+                    if (modPaths.length > 0) {
+                      window.dispatchEvent(new CustomEvent('zeus:file-changed', {
+                        detail: { paths: modPaths, tool: modTool.name }
+                      }));
+                    }
+                  }
+                } else if (evt.type === 'done') {
+                  assistantText = evt.text || 'Sin respuesta';
+                  responseToolLog = evt.toolLog || liveToolLog;
+                  if (evt.conversationId) {
+                    if (!currentConversationId) setPendingConversationTitle(null);
+                    currentConversationId = evt.conversationId;
+                    setConversationId(evt.conversationId as any);
+                    triggerRefreshConversations();
+                  }
+                  // Aplicar el toolLog FINAL (status reales: success/error) para
+                  // que el último tool deje de mostrar el spinner y el run se
+                  // colapse al resumen. Sin esto, el último tool se quedaba
+                  // 'running' para siempre y su contenido nunca se veía.
+                  setMessages((prevMsgs) => {
+                    const idx = prevMsgs.findIndex(m => m.id === assistantMessageId);
+                    if (idx !== -1) {
+                      prevMsgs[idx] = { ...prevMsgs[idx], toolLog: responseToolLog || prevMsgs[idx].toolLog, content: '' };
+                    }
+                    return [...prevMsgs];
+                  });
+                  // Efecto de escritura (typewriter) visible: ritmo adaptativo
+                  // según la longitud del texto para que SIEMPRE se perciba el
+                  // flujo (corto = claro, largo = ágil pero no instantáneo).
+                  let typed = 0;
+                  const textLen = assistantText.length;
+                  const typeSpeed = 22; // ms por tick
+                  // 1 char/tick (<600 chars) → 3 chars/tick (>2500) → 45 chars/s mínimo
+                  const typeStep = textLen < 600 ? 1 : textLen < 1500 ? 2 : textLen < 3000 ? 3 : 5;
+                  const typeInterval = setInterval(() => {
+                    typed += typeStep;
+                    const chunk = assistantText.slice(0, typed);
+                    setMessages((prevMsgs) => {
+                      const idx = prevMsgs.findIndex(m => m.id === assistantMessageId);
+                      if (idx !== -1) {
+                        prevMsgs[idx] = { ...prevMsgs[idx], content: chunk };
+                      }
+                      return [...prevMsgs];
+                    });
+                    if (typed >= assistantText.length) {
+                      clearInterval(typeInterval);
+                      // Asegurar el texto completo exacto
+                      setMessages((prevMsgs) => {
+                        const idx = prevMsgs.findIndex(m => m.id === assistantMessageId);
+                        if (idx !== -1) {
+                          prevMsgs[idx] = { ...prevMsgs[idx], content: assistantText };
+                        }
+                        return [...prevMsgs];
+                      });
+                      // AutoPlay: cuando el texto termina de escribirse y el
+                      // botón Auto play está activado, reproducir la respuesta
+                      // completa por los altavoces. (El flujo SSE de tools no
+                      // usaba el TTS — solo el flujo de texto viejo lo hacía.)
+                      if (autoPlayResponses && assistantText.trim()) {
+                        speakMessage(messages.length, assistantText);
+                      }
+                    }
+                  }, typeSpeed);
+                  if (messagesEndRef.current) smartScrollToBottom();
+                } else if (evt.type === 'error') {
+                  throw new Error(evt.error || 'Error en tools');
+                }
+              } catch (parseErr) {
+                // ignorar líneas no-JSON
+              }
+            }
+          }
+        } else if (false) {
           if (!res.ok) {
             const errText = await res.text().catch(() => '');
             throw new Error(errText || 'Error al enviar');
@@ -2871,6 +3090,12 @@ Esta regla aplica SOLO para este modelo.
           }, 1200);
 
           setIsStreaming(true);
+          // Evitar intervalos huérfanos si se inicia un nuevo stream antes
+          // de que el anterior se haya autolimpidado.
+          if (currentPlaybackIntervalRef.current) {
+            clearInterval(currentPlaybackIntervalRef.current as any);
+            currentPlaybackIntervalRef.current = null;
+          }
           const playbackInterval = setInterval(() => {
             if (isWarmingUp && !streamDone) return;
 
@@ -2912,7 +3137,7 @@ Esta regla aplica SOLO para este modelo.
                 });
 
                 if (messagesEndRef.current) {
-                  messagesEndRef.current.scrollIntoView({ behavior: 'auto' });
+                  smartScrollToBottom();
                 }
 
                 // 2. Sincronización de Voz
@@ -2978,6 +3203,25 @@ Esta regla aplica SOLO para este modelo.
           });
 
           streamDone = true;
+          // Detener el playback inmediatamente. Sin esto, el intervalo (500 ms)
+          // sigue setMessages(displayedInUi) con el parcial en CRUDO y, cuando el
+          // flujo principal aplica el texto limpio vía updateAssistantMessage,
+          // la próxima tick del intervalo lo sobrescribe → reaparece "texto
+          // anterior". Volcamos el texto completo de una vez y soltamos el
+          // intervalo; el flujo principal lo sustituirá por la versión limpia.
+          if (currentPlaybackIntervalRef.current) {
+            clearInterval(currentPlaybackIntervalRef.current as any);
+            currentPlaybackIntervalRef.current = null;
+          }
+          displayedInUi = fullTextFromStream;
+          setMessages((prevMsgs) => {
+            const idx = prevMsgs.findIndex(m => m.id === assistantMessageId);
+            if (idx === -1) return prevMsgs;
+            const newMsgs = [...prevMsgs];
+            newMsgs[idx] = { ...newMsgs[idx], content: fullTextFromStream };
+            return newMsgs;
+          });
+          setIsStreaming(false);
           // Aseguramos que el texto final sea el correcto
           if (streamResult.error) {
             throw new Error(streamResult.error);
@@ -2988,8 +3232,8 @@ Esta regla aplica SOLO para este modelo.
             if (!currentConversationId) {
               setPendingConversationTitle(null);
             }
-            currentConversationId = streamResult.conversationId;
-            setConversationId(streamResult.conversationId);
+            currentConversationId = streamResult.conversationId as any;
+            setConversationId(streamResult.conversationId as any);
             triggerRefreshConversations();
           }
         } else {
@@ -2997,6 +3241,7 @@ Esta regla aplica SOLO para este modelo.
           if (!res.ok) throw new Error(data?.error || 'Error al enviar');
 
           assistantText = data.text || 'Sin respuesta';
+          responseToolLog = data.toolLog || [];
           if (data.conversationId) {
             if (!currentConversationId) {
               setPendingConversationTitle(null);
@@ -3004,6 +3249,20 @@ Esta regla aplica SOLO para este modelo.
             currentConversationId = data.conversationId;
             setConversationId(data.conversationId);
             triggerRefreshConversations();
+          }
+
+          // Poner el texto final directamente.
+          setMessages((prevMsgs) => {
+            const idx = prevMsgs.findIndex(m => m.id === assistantMessageId);
+            if (idx !== -1) {
+              prevMsgs[idx] = { ...prevMsgs[idx], toolLog: responseToolLog, content: assistantText };
+            }
+            return [...prevMsgs];
+          });
+          if (messagesEndRef.current) smartScrollToBottom();
+          // AutoPlay: reproducir la respuesta completa (flujo JSON sin tools)
+          if (autoPlayResponses && assistantText.trim()) {
+            speakMessage(messages.length, assistantText);
           }
         }
 
@@ -3029,7 +3288,7 @@ Esta regla aplica SOLO para este modelo.
           return languageMap[ext] || 'typescript';
         };
 
-        const updateAssistantMessage = (currentDisplayText: string, currentApiResults: typeof apiCallResults) => {
+        const updateAssistantMessage = (currentDisplayText: string, currentApiResults: typeof apiCallResults, currentToolLog?: any[]) => {
           let content = currentDisplayText;
           // Filtrar resultados técnicos de "save tasks" para mantener el chat limpio si el usuario lo prefiere
           // o si el código ya se está mostrando en burbujas.
@@ -3059,7 +3318,7 @@ Esta regla aplica SOLO para este modelo.
             content = `📡 **Resultados:**\n\n${resultsText}\n\n---\n\n${currentDisplayText}`.trim();
           }
           setMessages((prevMsgs) =>
-            prevMsgs.map((m) => m.id === assistantMessageId ? { ...m, content: content } : m)
+            prevMsgs.map((m) => m.id === assistantMessageId ? { ...m, content: content, toolLog: currentToolLog || m.toolLog } : m)
           );
         };
 
@@ -3095,9 +3354,14 @@ Esta regla aplica SOLO para este modelo.
 
         const textWithZeusMarkers = normalizedAssistantText.replace(
           /\[ZEUS_API_CALL\][\s\S]*?(?=\[ZEUS_API_CALL\]|\[\/ZEUS_API_CALL\]|\[TERMINAL_COMMAND\]|$)/g,
-          () => {
+          (match) => {
             const bubble = codeBubbleByZeusBlockIndex[zeusReplaceIndex++];
-            if (!bubble) return '';
+            if (!bubble) {
+              // Sin contenido de archivo: mostrar solo la descripción de la acción
+              const parsed = safeJsonParse(match.replace(/^\[ZEUS_API_CALL\]/, ''));
+              const desc = parsed && typeof parsed.description === 'string' ? parsed.description.trim() : '';
+              return desc ? `\n[ZEUS_ACTION]${desc}[/ZEUS_ACTION]\n` : '';
+            }
             const markerIndex = codeBubblesForMessage.push(bubble) - 1;
             return `\n[CODE_BUBBLE_${markerIndex}]\n`;
           }
@@ -3175,9 +3439,13 @@ Esta regla aplica SOLO para este modelo.
         if (!streamingMessageCreated) {
           const initialAssistantMessage = createChatMessage('assistant', currentVisibleText);
           initialAssistantMessage.id = assistantMessageId;
+          if (responseToolLog && responseToolLog.length > 0) {
+            initialAssistantMessage.toolLog = responseToolLog;
+          }
           setMessages((m) => [...m, initialAssistantMessage]);
+          streamingMessageCreated = true;
         } else {
-          updateAssistantMessage(currentVisibleText, apiCallResults);
+          updateAssistantMessage(currentVisibleText, apiCallResults, responseToolLog);
         }
 
         // Reproducción automática de voz si está activa
@@ -3351,7 +3619,7 @@ Esta regla aplica SOLO para este modelo.
               updateAssistantMessage(currentVisibleText, apiCallResults);
 
               try {
-                const tasksRes = await fetch(`/api/plan/tasks?fileName=${planName.toLowerCase().replace(/\s+/g, '-')}.json`);
+                const tasksRes = await sessionFetch(`/api/plan/tasks?fileName=${planName.toLowerCase().replace(/\s+/g, '-')}.json`);
                 const tasksData = await tasksRes.json();
                 const tasks = tasksData.tasks || [];
 
@@ -3365,7 +3633,7 @@ Esta regla aplica SOLO para este modelo.
                       apiCallResults.push({ description: taskDesc, text: 'Ejecutando...' });
                       updateAssistantMessage(currentVisibleText, apiCallResults);
 
-                      const executeRes = await fetch('/api/plan/tasks/execute', {
+                      const executeRes = await sessionFetch('/api/plan/tasks/execute', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                         body: new URLSearchParams({ planName, taskId: task.id }).toString()
@@ -3451,6 +3719,21 @@ Esta regla aplica SOLO para este modelo.
               updateAssistantMessage(currentVisibleText, apiCallResults);
               await new Promise<void>((resolve) => {
                 terminalResolveRef.current = resolve;
+                // Timeout de seguridad: si el terminal no confirma en 90s,
+                // resolver automáticamente para que el chat no se quede colgado.
+                const timeout = setTimeout(() => {
+                  if (terminalResolveRef.current === resolve) {
+                    console.warn('[Chat] Terminal timeout — resolviendo automáticamente');
+                    terminalResolveRef.current = null;
+                    resolve();
+                  }
+                }, 90000);
+                // Limpiar el timeout si se resuelve antes
+                const originalResolve = resolve;
+                terminalResolveRef.current = () => {
+                  clearTimeout(timeout);
+                  originalResolve();
+                };
               });
             } else {
               currentVisibleText += segment;
@@ -3467,7 +3750,14 @@ Esta regla aplica SOLO para este modelo.
         const hasFinMarker = /\[FIN\]/i.test(assistantText);
         const hasActionableContent = /\[ZEUS_API_CALL\]/i.test(assistantText) || /\[TERMINAL_COMMAND\]/i.test(assistantText) || /"type"\s*:\s*"code_change"/i.test(assistantText);
 
-        const shouldStop = hasFinMarker || iterations >= MAX_ITERATIONS || controller.signal.aborted;
+        // Guard anti-bucle: si el modelo responde exactamente lo mismo que en
+        // la iteración anterior, está atascado repitiéndose (síntoma: "repite
+        // siempre lo mismo"). Detener el auto-continue en vez de seguir girando.
+        const isStuckRepeating = lastAssistantText.trim().length > 0
+          && assistantText.trim() === lastAssistantText.trim();
+        lastAssistantText = assistantText;
+
+        const shouldStop = hasFinMarker || iterations >= MAX_ITERATIONS || controller.signal.aborted || isStuckRepeating;
         if (!shouldStop) {
           // Si el modelo indicó [CONTINUAR] o si hubo acciones en la respuesta, continuar con instrucción clara
           if (hasContinueMarker || hasActionableContent) {
@@ -3645,8 +3935,16 @@ Esta regla aplica SOLO para este modelo.
         ) : (
           messages
             .filter((msg) => !(msg.role === 'assistant' && String(msg.id || '').startsWith('stage-typing-')))
+            // Evitar claves duplicadas: si el historial (o un mensaje optimista re-ecoado por el
+            // servidor) contiene dos mensajes con el mismo id, React duplica/omite hijos. Nos
+            // quedamos con la primera aparición de cada id.
+            .filter((msg, i, self) => {
+              const key = msg.id || `idx-${i}`;
+              return self.findIndex((m, j) => (m.id || `idx-${j}`) === key) === i;
+            })
             .map((msg, i) => {
-            // Asegurar que tenemos un ID para el mensaje (especialmente para los cargados del historial)
+            // Asegurar que tenemos un ID para el mensaje (especialmente para los cargados del historial).
+            // El dedup previo garantiza que cada id aparece una sola vez, así que la clave es única.
             const msgId = msg.id || `msg-${i}-${msg.content.substring(0, 10)}`;
             const isErrorFromEditor = msg.role === 'user' && (msg.content.includes('Hola Zeus, tengo este error') || msg.content.includes('Enviado a Zeus para corrección'));
             const messageDate = msg.createdAt ? new Date(msg.createdAt) : null;
@@ -3698,6 +3996,10 @@ Esta regla aplica SOLO para este modelo.
                   }}
                   title={speakingIndex === i && msg.role === 'assistant' ? 'Haz click para saltar a esta posición' : undefined}
                 >
+                  {msg.toolLog && msg.toolLog.length > 0 && (
+                    <ToolCallDisplay toolLog={msg.toolLog} />
+                  )}
+
                   {renderMessageContent(
                     msg.content,
                     t,

@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import Editor from '@monaco-editor/react';
 import { useEditor } from '@/context/editor-context';
 import { smartReplace } from '@/lib/smartReplace';
+import { useChatMonacoTheme, ensureReactMonacoLoader } from '@/lib/zeus-monaco/react-loader';
 
 interface ChatCodeBubbleProps {
   code: string;
@@ -21,6 +22,19 @@ const ChatCodeBubble = ({ code, language = 'typescript', fileName, isVisible, is
   const [copied, setCopied] = useState(false);
   const [mounted, setMounted] = useState(false);
   const editorRef = useRef<any>(null);
+  // Tema activo del selector de arriba (ThemePicker), misma fuente que el
+  // editor principal (colección monaco_themes de PocketBase local). Antes
+  // forzaba 'zeus-black' fijo con setTheme GLOBAL, lo que pisaba el tema del
+  // editor principal cada vez que el modelo escribía una burbuja de código.
+  const theme = useChatMonacoTheme();
+
+  // Asegurar que @monaco-editor/react use la instancia LOCAL de Monaco
+  // (donde están definidos zeus-dark y los temas de extensiones). Sin esto,
+  // el chat carga su propia instancia CDN y los temas de Zeus no existen →
+  // fondo blanco por defecto. Se llama en el cuerpo (no solo en useEffect)
+  // porque el <Editor> puede montarse en el primer render (burbujas
+  // code_change abren por defecto) y el import debe estar lanzado ya.
+  ensureReactMonacoLoader();
 
   // code_change bubbles auto-expand; regular code bubbles start collapsed
   const isCodeChange = (() => {
@@ -55,18 +69,10 @@ const ChatCodeBubble = ({ code, language = 'typescript', fileName, isVisible, is
 
   const handleEditorDidMount = (editor: any, monaco: any) => {
     editorRef.current = editor;
-    monaco.editor.defineTheme('zeus-black', {
-      base: 'vs-dark',
-      inherit: true,
-      rules: [],
-      colors: {
-        'editor.background': '#000000',
-        'editorGutter.background': '#000000',
-        'minimap.background': '#000000',
-        'editor.lineHighlightBackground': '#111111',
-      },
-    });
-    monaco.editor.setTheme('zeus-black');
+    // NO llamar a monaco.editor.setTheme() aquí: es GLOBAL y pisaría el tema
+    // elegido por el usuario en el ThemePicker (editor principal incluido).
+    // El tema se controla vía la prop `theme` del <Editor>, sincronizada con
+    // el selector de arriba ('zeus.monaco.theme' + evento de cambio).
   };
 
   const handleCopy = async () => {
@@ -199,7 +205,7 @@ const ChatCodeBubble = ({ code, language = 'typescript', fileName, isVisible, is
                 ? (isMaximized ? "opacity-100 h-[326px] max-h-[48vh] my-4 border-border/80" : "opacity-100 h-[270px] max-h-[40vh] my-4 border-border/80")
                 : "opacity-100 my-1 border-border/80/40"))
         : "opacity-0 h-0 overflow-hidden border-transparent pointer-events-none"
-    )} style={{ backgroundColor: '#000000' }}>
+    )} style={{ backgroundColor: 'hsl(var(--card))' }}>
       
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 shrink-0 border-b border-white/10 bg-background">
@@ -277,7 +283,7 @@ const ChatCodeBubble = ({ code, language = 'typescript', fileName, isVisible, is
             language={language.toLowerCase()}
             onMount={handleEditorDidMount}
             value={code}
-            theme="zeus-black"
+            theme={theme}
             options={{
               readOnly: true,
               fontSize: 11,

@@ -99,11 +99,16 @@ export default function ApiConfigModal({
     try {
       let providerId = '';
 
-      // 1. Buscar proveedor por NOMBRE (nunca usar el nombre como ID)
+      // 1. Resolver proveedor por NOMBRE.
+      // El endpoint GET del RAE API ignora el parámetro `filter`, así que
+      // obtenemos la lista y filtramos en cliente para encontrar la coincidencia exacta.
       if (localModelConfig.provider) {
-        const searchRes = await fetch(`${RAE_API_URL}/api/v1/providers?filter=${encodeURIComponent(`name = "${localModelConfig.provider}"`)}&limit=1`);
-        const searchData = searchRes.ok ? await searchRes.json() : { records: [] };
-        const existing = (searchData.records || searchData.items || [])[0];
+        const provRes = await fetch(`${RAE_API_URL}/api/v1/providers?limit=200`);
+        const provData = provRes.ok ? await provRes.json() : { items: [], records: [] };
+        const providers = provData.items || provData.records || [];
+        const existing = providers.find(
+          (p: any) => (p.name || '').toLowerCase() === localModelConfig.provider.toLowerCase()
+        );
 
         if (existing) {
           providerId = existing.id;
@@ -117,34 +122,48 @@ export default function ApiConfigModal({
             })
           });
         } else if (localModelConfig.apiUrl) {
-          // Crear nuevo proveedor
+          // Crear nuevo proveedor (apiKey es obligatorio: usamos un valor si está vacío)
           const createRes = await fetch(`${RAE_API_URL}/api/v1/providers`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               name: localModelConfig.provider,
               baseUrl: localModelConfig.apiUrl,
-              apiKey: localModelConfig.apiKey || ''
+              apiKey: localModelConfig.apiKey || ' '
             })
           });
           if (createRes.ok) {
             const created = await createRes.json();
-            providerId = created.id;
+            providerId = created.id || '';
+          } else {
+            const errTxt = await createRes.text();
+            throw new Error(`No se pudo crear el proveedor "${localModelConfig.provider}": ${createRes.status} - ${errTxt}`);
           }
+        }
+
+        // Si tras buscar/crear no hay ID válido, usamos el nombre como último recurso
+        if (!providerId) {
+          providerId = localModelConfig.provider;
         }
       }
 
-      // 2. Guardar el modelo con solo los campos que existen en el esquema RAE
-      // (name, providerId, modelName, temperature, maxTokens, isActive)
+      // 2. Guardar el modelo con todos los campos del esquema RAE.
+      // providerId es obligatorio, por lo que debe ser siempre un ID real.
+      const modelName = localModelConfig.modelName || localModelConfig.name || 'modelo';
       const modelUpdateData: any = {
-        name: localModelConfig.modelName || localModelConfig.name || 'modelo',
-        providerId: providerId || localModelConfig.provider || '',
+        name: modelName,
+        modelName: modelName,
+        providerId: providerId || '',
         temperature: localModelConfig.temperature ?? 0.7,
         maxTokens: localModelConfig.maxTokens ?? 2048,
+        topP: localModelConfig.topP ?? 1,
+        frequencyPenalty: localModelConfig.frequencyPenalty ?? 0,
+        presencePenalty: localModelConfig.presencePenalty ?? 0,
         stream: localModelConfig.stream ?? false,
+        systemPrompt: localModelConfig.systemPrompt || '',
+        isEmbedding: false,
         isActive: true
       };
-      if (localModelConfig.modelName) modelUpdateData.modelName = localModelConfig.modelName;
 
       const isNewModel = !localModelConfig.id;
       const url = isNewModel
@@ -172,9 +191,9 @@ export default function ApiConfigModal({
         const errorText = await res.text();
         throw new Error(`Error ${res.status}: ${errorText}`);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving model config:', error);
-      alert(`Error al guardar: ${error}`);
+      alert(`Error al guardar: ${error?.message || error}`);
     } finally {
       setIsSavingModel(false);
     }

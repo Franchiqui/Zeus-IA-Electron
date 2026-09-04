@@ -23,12 +23,15 @@ import { getStoredTheme, onThemeChange, emitThemeChange, setStoredTheme } from '
 import { saveMonacoTheme, getActiveMonacoTheme, onMonacoThemeChange } from '@/lib/zeus-monaco/monaco-theme-service';
 import { Button } from '@/components/ui/button';
 
-// Importaciones dinámicas para evitar SSR con Monaco
+// Importaciones dinámicas para evitar SSR con Monaco.
+// Son `let` porque el import() es asíncrono; hasta que resuelva son `undefined`,
+// por lo que todo uso debe ir precedido de ensureMonacoLoaded().
 let listRegisteredThemes: () => any[];
 let initZeusMonaco: () => Promise<void>;
 let isMonacoReady: () => boolean;
 let applyMonacoTheme: (themeId: string) => boolean;
 
+let loadPromise: Promise<void> | null = null;
 const loadZeusMonaco = async () => {
   const [ext, init] = await Promise.all([
     import('@/lib/zeus-monaco/extensions'),
@@ -40,9 +43,23 @@ const loadZeusMonaco = async () => {
   applyMonacoTheme = init.applyMonacoTheme;
 };
 
-// Cargar módulos al montar el componente
+// Garantiza que el import dinámico solo se lanza una vez y devuelve siempre
+// la misma promesa. Cualquier consumidor debe await/then sobre esto antes de
+// llamar a initZeusMonaco/isMonacoReady/listRegisteredThemes/applyMonacoTheme.
+const ensureMonacoLoaded = (): Promise<void> => {
+  if (!loadPromise) {
+    loadPromise = loadZeusMonaco().catch((e) => {
+      loadPromise = null; // permitir reintentar si falla
+      console.warn('[ThemePicker] Fallo al cargar zeus-monaco:', e);
+      throw e;
+    });
+  }
+  return loadPromise;
+};
+
+// Cargar módulos al importar el componente (cliente)
 if (typeof window !== 'undefined') {
-  loadZeusMonaco().catch(console.warn);
+  ensureMonacoLoaded();
 }
 
 interface ThemeEntry {
@@ -66,12 +83,16 @@ function useExtensionThemes(): ThemeEntry[] {
   const [themes, setThemes] = useState<ThemeEntry[]>(BUILTIN_THEMES);
   const refresh = useCallback(() => {
     if (typeof window === 'undefined') return;
-    if (!isMonacoReady()) {
-      setThemes(BUILTIN_THEMES);
-      return;
-    }
-    const extThemes = listRegisteredThemes();
-    setThemes([...BUILTIN_THEMES, ...extThemes]);
+    ensureMonacoLoaded()
+      .then(() => {
+        if (!isMonacoReady()) {
+          setThemes(BUILTIN_THEMES);
+          return;
+        }
+        const extThemes = listRegisteredThemes();
+        setThemes([...BUILTIN_THEMES, ...extThemes]);
+      })
+      .catch(() => setThemes(BUILTIN_THEMES));
   }, []);
 
   useEffect(() => {
@@ -109,7 +130,8 @@ export function ThemePicker() {
     if (!exists) {
       const fallback = 'vs-dark';
       setCurrent(fallback);
-      initZeusMonaco()
+      ensureMonacoLoaded()
+        .then(() => initZeusMonaco())
         .then(() => applyMonacoTheme(fallback))
         .catch(() => {});
       emitThemeChange(fallback);
@@ -231,7 +253,8 @@ export function ThemePicker() {
     // (p.ej. el usuario abre el ThemePicker antes que cualquier editor),
     // `initZeusMonaco()` lo inicializa. El editor también escucha el evento
     // 'zeus:monaco-theme-changed' y aplica el tema sobre su instancia.
-    initZeusMonaco()
+    ensureMonacoLoaded()
+      .then(() => initZeusMonaco())
       .then(() => {
         const ok = applyMonacoTheme(themeId);
         console.log('[ThemePicker] seleccionar', themeId, '→ applyMonacoTheme=', ok, 'ready=', isMonacoReady());

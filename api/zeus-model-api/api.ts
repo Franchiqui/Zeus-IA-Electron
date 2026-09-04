@@ -72,7 +72,7 @@ app.post('/api/zeus-model-api/chat', async (req: Request, res: Response) => {
       if (body.provider === 'OpenAI') apiUrl = 'https://api.openai.com/v1/chat/completions';
       else if (body.provider === 'Deepseek') apiUrl = process.env.DEEPSEEK_API_URL ?? 'https://api.deepseek.com/chat/completions';
       else if (body.provider === 'Ollama') apiUrl = 'http://localhost:11434/api/chat';
-      else if (body.provider === 'Ollama Cloud') apiUrl = process.env.OLLAMA_CLOUD_URL ?? 'https://ollama.com/api/generate';
+      else if (body.provider === 'Ollama Cloud') apiUrl = process.env.OLLAMA_CLOUD_URL ?? 'https://ollama.com/api/chat';
       else if (body.provider === 'LM Studio') apiUrl = `${process.env.LM_STUDIO_URL || 'http://localhost:1234'}/v1/chat/completions`;
     }
 

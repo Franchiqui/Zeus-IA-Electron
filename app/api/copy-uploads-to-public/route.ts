@@ -10,8 +10,8 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const requestedFiles = body.files as string[] | undefined;
 
-    // La ruta del proyecto activo viene de DATA_PATH
-    const projectRoot = getBaseDataPath();
+    // La ruta del proyecto activo viene del cwd de la sesión activa
+    const projectRoot = await getBaseDataPath();
     const publicDir = path.join(projectRoot, 'public');
 
     // Los archivos subidos se guardan en la raíz de Zeus (uploads) o en userData/uploads en Electron

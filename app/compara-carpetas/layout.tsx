@@ -1,12 +1,9 @@
 'use client';
 
 import './globals.css';
-import { Inter } from 'next/font/google';
 import { Providers } from '@/components/Providers';
 import { ComponentSelectorHelper } from '@/components/component-selector-helper';
 
-
-const inter = Inter({ subsets: ['latin'] });
 
 export default function RootLayout({
   children,
@@ -24,7 +21,7 @@ export default function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
+      <body>
         <Providers>
           
           <ComponentSelectorHelper />

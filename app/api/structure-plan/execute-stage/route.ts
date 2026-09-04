@@ -414,7 +414,7 @@ async function ensureProjectRootFolderTask(apiBaseUrl: string, planName: string,
 }
 
 async function saveFileDirectlyToDataPath(filePath: string, content: string) {
-  const basePath = getBaseDataPath();
+  const basePath = await getBaseDataPath();
   const safeFilePath = String(filePath || '').replace(/\\/g, '/').replace(/^\/+/, '');
   const targetPath = path.resolve(path.join(basePath, safeFilePath));
 

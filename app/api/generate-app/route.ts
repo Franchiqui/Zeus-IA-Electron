@@ -1151,19 +1151,6 @@ function getSystemPrompt(selectedTemplate: string, language: string, dbType: str
 - ALWAYS verify that the code is functional before delivery
 - ALWAYS prioritize quality over development speed`;
 
-  const authConfigPrompt = `
-⚠️ AUTH CONFIGURATION RULES (MANDATORY):
-- Do NOT generate lib/auth-config.ts or lib/auth-config.tsx. These files are already provided.
-- The authPaths.home value is already set to '/' (root page). NEVER change it to '/dashboard' or any other path.
-- After login or registration, ALWAYS redirect to authPaths.home (which is '/').
-- Import auth paths from '@/lib/auth-config' and use authPaths.home for all post-auth redirects.
-
-⚠️ UI COMPONENT EXPORT RULES (MANDATORY):
-- ALL components inside components/ui/ MUST use named exports: export { ComponentName } (NEVER export default).
-- When importing UI components, ALWAYS use named imports with curly braces: import { Input, Button, Label } from '@/components/ui/[name]'.
-- NEVER use default imports for UI components (e.g., import Input from '@/components/ui/input' is FORBIDDEN).
-`;
-
   const authPrompt = getAuthDetailsPrompt(authMethod);
   const databasePrompt = getDatabaseDetailsPrompt(dbType, language);
 
@@ -1442,7 +1429,6 @@ function getSystemPrompt(selectedTemplate: string, language: string, dbType: str
   }
 
   return `${basePrompt}
-${authConfigPrompt}
 
 --- Especificaciones del Proyecto ---
 ${templateDetails}
@@ -1960,15 +1946,7 @@ IMPORTANTE: Usar estos componentes en lugar de crear HTML básico. Todos tienen 
 - ⚠️ Este texto completo DEBE aparecer en TODOS los footers de la aplicación
 - ⚠️ Si generas app/page.tsx con un footer inline, el copyright DEBE usar el texto especificado arriba en español
 
-5. NAVIGATION AND PAGES RULES (CRITICAL):
- - ONLY create navigation links (in Navbar, Footer, buttons, links, etc.) to pages that ACTUALLY EXIST in the generated file structure.
- - If you include links to pages like /about, /contact, /services, /features, etc., you MUST include the corresponding page files (e.g., app/about/page.tsx, app/contact/page.tsx) in the JSON output with COMPLETE content.
- - NEVER create navigation links, buttons, or <Link> components pointing to pages that don't exist in the file list.
- - If the app only has app/page.tsx, the navigation should ONLY link to "/" or "#" — do NOT invent additional page routes.
- - Every page referenced in navigation MUST have a real file with substantial content, not empty or placeholder content.
- - When creating multi-page apps, ALWAYS include ALL pages in the file structure before adding navigation to them.
-
-6. OUTPUT JSON STRUCTURE:
+5. OUTPUT JSON STRUCTURE:
  - The root key MUST be the name of the app (e.g. "my-awesome-app").
  - Within the root key, there MUST be a "files" key.
  - The "files" key MUST contain an object where the keys are the file paths and the values are the full file content.

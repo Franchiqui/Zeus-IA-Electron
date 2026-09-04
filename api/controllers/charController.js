@@ -2,8 +2,18 @@ const fs = require('fs-extra');
 const path = require('path');
 const { createBackup } = require('./historyController');
 const { saveTaskToPlan } = require('./planController');
+const { getSessionCwd } = require('../middleware/sessionCwd');
 
-const getDataDir = () => require('../config').DATA_DIR;
+const getDataDir = (req) => getSessionCwd(req);
+
+const requireCwd = (req, res) => {
+  const cwd = getDataDir(req);
+  if (!cwd) {
+    res.status(400).json({ error: 'No hay sesión activa. Selecciona una carpeta de proyecto.' });
+    return null;
+  }
+  return cwd;
+};
 
 const charController = {
   // Ver caracteres específicos
@@ -15,7 +25,7 @@ const charController = {
       return res.status(400).json({ error: 'Faltan parámetros: startCharIndex y endCharIndex son requeridos' });
     }
     
-    const fullPath = path.join(getDataDir(), filePath || '', name);
+    const cwd = requireCwd(req, res); if (!cwd) return; const fullPath = path.join(cwd, filePath || '', name);
     
     try {
       const exists = await fs.pathExists(fullPath);
@@ -60,7 +70,7 @@ const charController = {
     const { name, lineNumber } = req.params;
     const { path: filePath } = req.query;
     
-    const fullPath = path.join(getDataDir(), filePath || '', name);
+    const cwd = requireCwd(req, res); if (!cwd) return; const fullPath = path.join(cwd, filePath || '', name);
     
     try {
       const exists = await fs.pathExists(fullPath);
@@ -121,7 +131,7 @@ const charController = {
       return res.status(400).json({ error: 'Faltan parámetros: position y content son requeridos' });
     }
     
-    const fullPath = path.join(getDataDir(), filePath || '', name);
+    const cwd = requireCwd(req, res); if (!cwd) return; const fullPath = path.join(cwd, filePath || '', name);
     
     try {
       const exists = await fs.pathExists(fullPath);
@@ -193,7 +203,7 @@ const charController = {
       return res.status(400).json({ error: 'Faltan parámetros: startCharIndex, endCharIndex y content son requeridos' });
     }
     
-    const fullPath = path.join(getDataDir(), filePath || '', name);
+    const cwd = requireCwd(req, res); if (!cwd) return; const fullPath = path.join(cwd, filePath || '', name);
     
     try {
       const exists = await fs.pathExists(fullPath);
@@ -266,7 +276,7 @@ const charController = {
       return res.status(400).json({ error: 'Faltan parámetros: startCharIndex y endCharIndex son requeridos' });
     }
     
-    const fullPath = path.join(getDataDir(), filePath || '', name);
+    const cwd = requireCwd(req, res); if (!cwd) return; const fullPath = path.join(cwd, filePath || '', name);
     
     try {
       const exists = await fs.pathExists(fullPath);

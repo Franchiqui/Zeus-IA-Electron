@@ -215,11 +215,14 @@
             align-items: center;
             min-height: 600px;
             position: relative;
-            background: linear-gradient(to bottom right, rgba(255,255,255,0.05), transparent);
-            border: 1px solid rgba(34,211,238,0.2);
-            border-radius: 16px;
-            padding: 20px;
-            box-shadow: 0 0 15px rgba(34,211,238,0.15);
+            /* Contenedor invisible: sin fondo/borde/padding para que el marco
+               del dispositivo use TODO el ancho disponible (el JS lo usa para
+               medir el panel, por eso se mantiene en el DOM). */
+            background: transparent;
+            border: none;
+            border-radius: 0;
+            padding: 0;
+            box-shadow: none;
         }
 
         .preview-controls {
@@ -244,21 +247,40 @@
             flex: 1;
             width: 100%;
             margin-top: 20px; /* Added margin-top */
+            overflow: auto; /* Scroll para marcos más grandes que el panel */
         }
         
         .preview-frame-container {
             position: relative;
-            display: flex;
-            justify-content: center;
-            margin-top: 20px; /* Added margin-top */
+            display: block;
+            margin: 20px auto 0; /* Centrado horizontal del marco (el ancho lo fija updateZoom) */
+            overflow: hidden;
+            background: #0b1220;
         }
-        
+
+        /* Mask interior: contiene el iframe y es lo ÚNICO que escala con el zoom.
+           El marco (contenedor) permanece fijo al tamaño de la resolución elegida. */
+        .device-mask {
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform-origin: top left;
+            overflow: hidden;
+        }
+
+        .device-mask iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: block;
+        }
+
         /* Base styles for all frames */
         .preview-frame {
             border: none;
-            border-radius: 8px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-            transition: all 0.3s ease;
+            border-radius: 0;
+            box-shadow: none;
+            transition: none;
             overflow: hidden; /* Hide any potential scrollbar */
         }
         
@@ -300,39 +322,62 @@
             height: 0 !important;
         }
         
-        /* Estilos específicos para dispositivos móviles */
+        /* Estilos específicos para dispositivos móviles — ahora sobre el MARCO
+           (contenedor), que NO se escala con el zoom. */
         .mobile-frame {
-            border-radius: 25px;
-            border: 8px solid rgba(31,41,55,0.8);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-            position: relative;
-            background: rgba(31,41,55,0.8);
-            margin: 20px auto;
+            border-radius: 30px;
+            box-shadow: 0 0 0 6px #1f2937, 0 0 0 10px #374151, 0 15px 30px rgba(0, 0, 0, 0.4);
+            background: #111827;
         }
 
         .mobile-frame::before {
             content: '';
             position: absolute;
-            top: -15px;
+            top: 8px;
             left: 50%;
             transform: translateX(-50%);
             width: 60px;
             height: 4px;
-            background: rgba(55,65,81,0.7);
+            background: rgba(55,65,81,0.9);
             border-radius: 2px;
+            z-index: 60;
         }
 
         .mobile-frame::after {
             content: '';
             position: absolute;
-            bottom: -15px;
+            bottom: 8px;
             left: 50%;
             transform: translateX(-50%);
             width: 40px;
             height: 40px;
-            background: rgba(55,65,81,0.7);
+            background: transparent;
             border-radius: 50%;
             border: 2px solid rgba(75,85,99,0.5);
+            z-index: 60;
+        }
+
+        /* El mask recorta el contenido con las esquinas del dispositivo */
+        .mobile-frame .device-mask {
+            border-radius: 24px;
+        }
+
+        .tablet-frame {
+            border-radius: 20px;
+            box-shadow: 0 0 0 6px #1f2937, 0 0 0 10px #374151, 0 15px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        .tablet-frame .device-mask {
+            border-radius: 14px;
+        }
+
+        .desktop-frame {
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .desktop-frame .device-mask {
+            border-radius: 4px;
         }
         
         .resize-handle {
@@ -381,16 +426,6 @@
             background: #34d399 !important;
         }
         
-        .tablet-frame {
-            border-radius: 20px;
-            box-shadow: 0 0 0 6px #1f2937, 0 0 0 10px #374151, 0 15px 30px rgba(0, 0, 0, 0.4);
-        }
-        
-        .desktop-frame {
-            border-radius: 8px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-        }
-        
         .device-options {
             margin-top: 20px;
             padding: 20px;
@@ -401,7 +436,7 @@
             border-radius: 12px;
             border: 1px solid #4b5563;
         }
-        
+
         .option-group {
             margin-bottom: 20px;
             background: linear-gradient(to bottom right, rgba(255,255,255,0.03), transparent);
@@ -647,13 +682,15 @@
     body.preview-only-mode {
         padding: 0 !important;
     }
-    body.preview-only-mode .max-w-6xl {
+    body.preview-only-mode .max-w-6xl,
+    body.preview-only-mode .max-w-none {
         max-width: none !important;
         width: 100% !important;
         margin: 0 !important;
         padding: 0 !important;
     }
-    body.preview-only-mode .max-w-6xl > *:not(#preview-container) {
+    body.preview-only-mode .max-w-6xl > *:not(#preview-container),
+    body.preview-only-mode .max-w-none > *:not(#preview-container) {
         display: none !important;
     }
     body.preview-only-mode #preview-container {
@@ -670,10 +707,12 @@
         height: 100%;
         max-width: none;
     }
+    body.preview-only-mode #preview-container .device-mask,
     body.preview-only-mode #preview-frame {
         width: 100% !important;
         height: 100% !important;
         max-width: none !important;
+        transform: none !important;
         border-radius: 0;
     }
     .preview-toolbar {
@@ -712,8 +751,8 @@
     </style>
 </head>
 
-<body class="p-8 main-interface">
-    <div class="max-w-6xl mx-auto">
+<body class="p-2 main-interface">
+    <div class="max-w-none mx-auto">
         <h1 class="text-3xl font-bold text-center mb-8 text-cyan-400">Panel de Control de Vista Previa</h1>
         
 
@@ -732,10 +771,11 @@
                 </div>
             </div>
             <div class="preview-content">
-                <div class="preview-frame-container">
-                    <iframe id="preview-frame" class="preview-frame desktop-frame"
-                            style="width: 100%; height: 600px; max-width: 1200px;"
-                            title="Vista previa del proyecto - Haz doble clic para pantalla completa"></iframe>
+                <div class="preview-frame-container desktop-frame">
+                    <div class="device-mask">
+                        <iframe id="preview-frame" class="preview-frame"
+                                title="Vista previa del proyecto - Haz doble clic para pantalla completa"></iframe>
+                    </div>
                         <!-- Overlay para selector de componentes -->
                         <div id="selector-overlay" class="hidden" style="position:absolute; inset:0; z-index:50; pointer-events:auto;"></div>
                         <div id="resize-handle" class="resize-handle hidden"></div>
@@ -1180,6 +1220,14 @@
         let currentProjectId = '';
         let currentSelectedModel = null;
         let currentZoom = 1;
+        // Tamaño REAL del dispositivo elegido (sin zoom ni fit), p.ej. 2560×1440.
+        // El zoom NO cambia el tamaño visual del marco: reduce el viewport del
+        // iframe (real/zoom) y escala para que el contenido interior crezca.
+        let frameBaseWidth = 0;
+        let frameBaseHeight = 0;
+        // Factor de ajuste para que la medida más grande del visor quepa en el
+        // panel (marco visual = medida real × frameFitScale).
+        let frameFitScale = 1;
 
         // Estado del inspector
         let inspectorReady = false;
@@ -1712,36 +1760,41 @@
         // Función para actualizar el zoom
         function updateZoom() {
             const previewFrame = document.getElementById('preview-frame');
-            if (previewFrame) {
-                previewFrame.style.transform = `scale(${currentZoom})`;
-                previewFrame.style.transformOrigin = 'center center';
+            const deviceMask = document.querySelector('.device-mask');
+            if (!previewFrame || !deviceMask) return;
+
+            // Fallback: si aún no hay bases guardadas (p.ej. primer arranque
+            // antes de updateFrameStyle), derivarlas del contenedor actual.
+            if (!frameBaseWidth || !frameBaseHeight) {
+                const frameContainer = document.querySelector('.preview-frame-container');
+                if (frameContainer) {
+                    const w = parseFloat(frameContainer.style.width) || 1200;
+                    const h = parseFloat(frameContainer.style.height) || 800;
+                    frameBaseWidth = w;
+                    frameBaseHeight = h;
+                } else {
+                    frameBaseWidth = 1200;
+                    frameBaseHeight = 800;
+                }
             }
+            // Zoom del CONTENIDO interior (estilo DevTools): el MASK interior
+            // (que contiene el iframe) se reduce a real/zoom → la app reflowea
+            // y se ve más grande/pequeña; el scale(zoom × fit) lo devuelve al
+            // tamaño del marco. El MARCO (contenedor con bordes/muesca) NO cambia.
+            deviceMask.style.width = `${frameBaseWidth / currentZoom}px`;
+            deviceMask.style.height = `${frameBaseHeight / currentZoom}px`;
+            deviceMask.style.transform = `scale(${currentZoom * frameFitScale})`;
+            deviceMask.style.transformOrigin = 'top left';
             zoomLevelSpan.textContent = `${Math.round(currentZoom * 100)}%`;
 
-            // Ajustar el contenedor principal para el zoom
-            const mainContainer = document.querySelector('.preview-container');
-            if (mainContainer) {
-                if (currentZoom > 1) {
-                    mainContainer.style.overflow = 'auto';
-                    // Mantener la altura personalizada del contenedor principal
-                    if (mainContainer.style.height && !mainContainer.style.height.includes('auto')) {
-                        mainContainer.style.maxHeight = mainContainer.style.height;
-                    } else {
-                        mainContainer.style.maxHeight = '800px';
-                    }
-                } else if (currentZoom < 1) {
-                    // Para zoom out, asegurar que el contenido sea visible y centrado
-                    mainContainer.style.overflow = 'visible';
-                    mainContainer.style.maxHeight = 'none';
-                    // Forzar el centrado inmediato para zoom out
-                    setTimeout(() => {
-                        centerContentVertically();
-                    }, 50);
-                } else {
-                    // Zoom normal (1x)
-                    mainContainer.style.overflow = 'visible';
-                    mainContainer.style.maxHeight = 'none';
-                }
+            // El marco (contenedor) mantiene el tamaño del dispositivo ajustado
+            // al panel (medida real × fit). Con zoom 1 el mask lo llena exacto;
+            // con zoom ≠ 1 el mask se reescala pero el marco queda igual.
+            const frameContainer = document.querySelector('.preview-frame-container');
+            if (frameContainer && frameBaseWidth && frameBaseHeight) {
+                frameContainer.style.width = `${frameBaseWidth * frameFitScale}px`;
+                frameContainer.style.height = `${frameBaseHeight * frameFitScale}px`;
+                frameContainer.style.overflow = 'hidden';
             }
 
             // Siempre centrar el contenido después de cambiar el zoom
@@ -1804,12 +1857,21 @@
             const previewContent = document.querySelector('.preview-content');
 
             if (previewContent) {
-                // Siempre centrar horizontalmente
-                previewContent.style.alignItems = 'center';
+                // Con marcos grandes (medidas reales > panel), NO centrar con
+                // justify-content center: recorta el inicio al desbordar.
+                const container = document.querySelector('.preview-frame-container');
+                const panelWidth = mainContainer ? mainContainer.clientWidth : window.innerWidth;
+                const panelHeight = mainContainer ? mainContainer.clientHeight : window.innerHeight;
+                const frameW = container ? container.offsetWidth : 0;
+                const frameH = container ? container.offsetHeight : 0;
+                const overflows = frameW > panelWidth - 20 || frameH > panelHeight - 20;
+
+                // Siempre centrar horizontalmente (salvo que desborde)
+                previewContent.style.alignItems = overflows ? 'flex-start' : 'center';
 
                 // Centrar verticalmente si hay altura personalizada O si el zoom es menor a 1
                 if ((mainContainer && mainContainer.style.height && !mainContainer.style.height.includes('auto')) || currentZoom < 1) {
-                    previewContent.style.justifyContent = 'center';
+                    previewContent.style.justifyContent = overflows ? 'flex-start' : 'center';
                     if (currentZoom < 1) {
                         console.log(`Zoom bajo (${currentZoom}), centrando contenido vertical y horizontalmente`);
                         // Asegurar que el contenedor tenga overflow visible para zoom out
@@ -3012,53 +3074,84 @@
             updateCustomResolutionFields();
             
             const [width, height] = currentResolution.split('x').map(Number);
-            const aspectRatio = height / width;
-            
-            let frameWidth, frameHeight;
-            
-            // Para dispositivos móviles, usar las dimensiones exactas de la plantilla
-            if (currentDevice === 'mobile') {
-                frameWidth = width;
-                frameHeight = height;
-                console.log('Dispositivo móvil - usando dimensiones exactas:', frameWidth, 'x', frameHeight);
+
+            // ¿La resolución actual es una medida ESTÁNDAR del visor (device-item)
+            // o una PERSONALIZADA escrita en los campos?
+            const isStandardPreset = Array.from(deviceItems).some(
+                item => item.dataset.device === currentDevice && item.dataset.resolution === currentResolution
+            );
+
+            // Medida de referencia para el visor del dispositivo actual. El marco
+            // se ajusta a la medida real elegida PERO con un factor de ajuste
+            // (fit) para que la medida de referencia quepa en el panel:
+            // 2560×1440 se ve más grande que 1366×768 (mantiene la proporción
+            // entre medidas) y el conjunto no desborda la pantalla.
+            // - desktop: referencia 1920×1080 → los marcos del ordenador se ven
+            //   MÁS GRANDES (el 2K 2560 desborda un poco y usa scroll).
+            // - tablet / móvil: referencia = su medida más grande → todo cabe.
+            const deviceMax = {
+                desktop: { w: 1920, h: 1080 },
+                tablet: { w: 1280, h: 1024 },
+                mobile: { w: 414, h: 896 }
+            };
+
+            const panel = document.querySelector('.preview-container');
+            const panelW = panel ? panel.clientWidth : window.innerWidth;
+            const panelH = panel ? panel.clientHeight : window.innerHeight;
+
+            let fitScale;
+            if (isStandardPreset) {
+                // Medida estándar: la referencia del visor hace que las medidas
+                // se distingan entre sí (1920 > 1366 > ...) sin desbordar.
+                const max = deviceMax[currentDevice] || { w: 1920, h: 1080 };
+                fitScale = Math.min(
+                    1,
+                    panelW / Math.max(max.w, width),
+                    panelH / Math.max(max.h, height)
+                );
             } else {
-                // Para desktop y tablet, calcular dimensiones con límites máximos
-                const maxWidth = 1200;
-                const maxHeight = 800;
-                
-                frameWidth = Math.min(width, maxWidth);
-                frameHeight = frameWidth * aspectRatio;
-                
-                if (frameHeight > maxHeight) {
-                    frameHeight = maxHeight;
-                    frameWidth = frameHeight / aspectRatio;
-                }
-                
-                console.log('Dispositivo desktop/tablet - dimensiones calculadas:', frameWidth, 'x', frameHeight);
+                // Resolución PERSONALIZADA: crece hasta llenar el panel con la
+                // medida puesta (aunque no sea estándar, aunque sea más ancha
+                // que alta). fit = 1 si la medida cabe completa.
+                fitScale = Math.min(1, panelW / width, panelH / height);
             }
+
+            const frameWidth = width * fitScale;
+            const frameHeight = height * fitScale;
+
+            console.log('Dispositivo', currentDevice, '- medida:', width, 'x', height,
+                isStandardPreset ? '(estándar)' : '(personalizada)',
+                'fit:', fitScale.toFixed(2), '→ marco:', Math.round(frameWidth), 'x', Math.round(frameHeight));
             
-            previewFrame.style.width = `${frameWidth}px`;
-            previewFrame.style.height = `${frameHeight}px`;
-            
+            // Guardar la medida REAL del dispositivo (sin zoom ni fit) y el
+            // factor de ajuste. updateZoom() combina ambos: viewport real/zoom
+            // + scale(zoom × fit) para que el marco quepa y el interior escale.
+            frameBaseWidth = width;
+            frameBaseHeight = height;
+            frameFitScale = fitScale;
+            updateZoom();
+
             console.log('Frame redimensionado a:', frameWidth, 'x', frameHeight);
-            
-            // Aplicar estilos de dispositivo
-            previewFrame.className = 'preview-frame';
-            
-            // Aplicar el estilo del dispositivo actual
-            if (currentDevice === 'mobile') {
-                previewFrame.classList.add('mobile-frame');
-                if (resizeHandle) resizeHandle.classList.remove('hidden');
-            } else if (currentDevice === 'tablet') {
-                previewFrame.classList.add('tablet-frame');
-                if (resizeHandle) resizeHandle.classList.add('hidden');
-            } else {
-                previewFrame.classList.add('desktop-frame');
-                if (resizeHandle) resizeHandle.classList.add('hidden');
+
+            // Aplicar el estilo del dispositivo actual AL MARCO (contenedor),
+            // que NO se escala con el zoom. El iframe interior queda limpio.
+            const frameContainer = document.querySelector('.preview-frame-container');
+            if (frameContainer) {
+                frameContainer.className = 'preview-frame-container';
+                if (currentDevice === 'mobile') {
+                    frameContainer.classList.add('mobile-frame');
+                    if (resizeHandle) resizeHandle.classList.remove('hidden');
+                } else if (currentDevice === 'tablet') {
+                    frameContainer.classList.add('tablet-frame');
+                    if (resizeHandle) resizeHandle.classList.add('hidden');
+                } else {
+                    frameContainer.classList.add('desktop-frame');
+                    if (resizeHandle) resizeHandle.classList.add('hidden');
+                }
             }
             
-            // Actualizar información del dispositivo
-            updateDeviceInfo(frameWidth, frameHeight);
+            // Actualizar información del dispositivo (mostrar la medida REAL, no la escalada por fit)
+            updateDeviceInfo(width, height);
             
             // Centrar el contenido después de actualizar el estilo del frame
             setTimeout(() => {
@@ -3092,11 +3185,12 @@
                 frameDimensionsElement.textContent = `${Math.round(frameWidth)} x ${Math.round(frameHeight)}`;
             }
             
-            if (frameStyleElement && previewFrame) {
+            if (frameStyleElement) {
                 let styleName = 'Desktop';
-                if (previewFrame.classList.contains('mobile-frame')) {
+                const frameContainer = document.querySelector('.preview-frame-container');
+                if (frameContainer && frameContainer.classList.contains('mobile-frame')) {
                     styleName = 'Móvil';
-                } else if (previewFrame.classList.contains('tablet-frame')) {
+                } else if (frameContainer && frameContainer.classList.contains('tablet-frame')) {
                     styleName = 'Tablet';
                 }
                 frameStyleElement.textContent = styleName;

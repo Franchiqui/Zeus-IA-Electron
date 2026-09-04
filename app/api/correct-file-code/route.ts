@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { UsageService, getProjectRoot, getModelsForUser } from '@/api/utils';
 import { getPocketBase } from '@/lib/pocketbase';
-import { applyCodeChanges } from '@/utils/codeApplier';
+import { fuzzyFindAndReplace, isAlreadyApplied, safeWriteFile } from '@/utils/fileOps';
 import { callModelGeneric } from '@/api/zeus-model-api/generic-model-call';
 import fs from 'fs/promises';
 import path from 'path';
@@ -1007,40 +1007,44 @@ export async function POST(request: NextRequest) {
         finalContent = normalize(fullContentRaw);
         console.log('✅ [POST-CORRECT] Usando fullContent del modelo (' + finalContent.length + ' chars)');
       } else {
-        // 2) Aplicar replacements
+        // 2) Aplicar replacements con la cadena fuzzy de 9 estrategias
+        //    (exact → line_trimmed → whitespace → indent → escape →
+        //     trimmed_boundary → unicode → block_anchor → context_aware) +
+        //    detección de ya-aplicado, reemplazando el antiguo indexOf exacto.
         const applyReplacements = (content: string, changes: any[]): string => {
           let correctedContent = normalize(content);
           const fileChanges = Array.isArray(changes)
             ? changes.filter((c: any) => c && (c.file === fileName || c.file?.replace(/\\/g, '/') === fileName?.replace(/\\/g, '/')) && Array.isArray(c.replacements))
             : [];
           let appliedCount = 0;
+          let alreadyAppliedCount = 0;
           for (const change of fileChanges) {
-            const replacementsWithIndices = (change.replacements || [])
-              .map((rep: any) => {
-                const oldText = typeof rep?.old === 'string'
-                  ? normalize(rep.old)
-                  : (typeof rep?.old_b64 === 'string' ? normalize(base64ToUtf8(rep.old_b64)) : '');
-                const newText = typeof rep?.new === 'string'
-                  ? normalize(rep.new)
-                  : (typeof rep?.new_b64 === 'string' ? normalize(base64ToUtf8(rep.new_b64)) : '');
-                const index = oldText ? correctedContent.indexOf(oldText) : -1;
-                return { oldText, newText, index };
-              })
-              .filter((r: any) => r.index !== -1 && r.oldText);
+            for (const rep of (change.replacements || [])) {
+              const oldText = typeof rep?.old === 'string'
+                ? normalize(rep.old)
+                : (typeof rep?.old_b64 === 'string' ? normalize(base64ToUtf8(rep.old_b64)) : '');
+              const newText = typeof rep?.new === 'string'
+                ? normalize(rep.new)
+                : (typeof rep?.new_b64 === 'string' ? normalize(base64ToUtf8(rep.new_b64)) : '');
+              if (!oldText || !newText) continue;
 
-            replacementsWithIndices.sort((a: any, b: any) => b.index - a.index);
-            for (const rep of replacementsWithIndices) {
-              correctedContent =
-                correctedContent.substring(0, rep.index) +
-                rep.newText +
-                correctedContent.substring(rep.index + rep.oldText.length);
-              appliedCount++;
+              const r = fuzzyFindAndReplace(correctedContent, oldText, newText, !!rep.replace_all);
+              if (r.matchCount > 0) {
+                correctedContent = r.newContent;
+                appliedCount++;
+                continue;
+              }
+              if (isAlreadyApplied(correctedContent, oldText, newText)) {
+                alreadyAppliedCount++;
+                continue;
+              }
+              console.warn('⚠️ [POST-CORRECT] replacement sin coincidencia fuzzy:', String(oldText).substring(0, 50).replace(/\n/g, '\\n'));
             }
           }
-          if (appliedCount === 0 && fileChanges.length > 0) {
-            console.warn('⚠️ [POST-CORRECT] Ningún replacement coincidió (old no encontrado en el contenido). El modelo debe copiar EXACTAMENTE el texto.');
+          if (appliedCount === 0 && alreadyAppliedCount === 0 && fileChanges.length > 0) {
+            console.warn('⚠️ [POST-CORRECT] Ningún replacement coincidió. El modelo debe copiar el texto con suficiente contexto.');
           } else if (appliedCount > 0) {
-            console.log('✅ [POST-CORRECT] Aplicados', appliedCount, 'replacements');
+            console.log(`✅ [POST-CORRECT] Aplicados ${appliedCount} replacements fuzzy (${alreadyAppliedCount} ya-aplicados)`);
           }
           return correctedContent;
         };
@@ -1136,10 +1140,12 @@ export async function POST(request: NextRequest) {
       if (correctProjectRoot) {
       try {
         const filePath = path.join(correctProjectRoot, effectiveFileName);
-        const dirPath = path.dirname(filePath);
-        await fs.mkdir(dirPath, { recursive: true });
-        await fs.writeFile(filePath, finalContent, 'utf-8');
-        console.log('✅ [POST-CORRECT] Archivo corregido guardado en disco:', filePath);
+        const writeRes = await safeWriteFile(filePath, finalContent);
+        if (!writeRes.success) {
+          console.error('❌ [POST-CORRECT] safeWriteFile falló:', writeRes.error);
+        } else {
+          console.log('✅ [POST-CORRECT] Archivo corregido guardado en disco:', filePath, writeRes.verified ? '(sha256 verified)' : '');
+        }
         if (!zipUpdated && projectId) {
           try {
             await new Promise(resolve => setTimeout(resolve, 300));

@@ -3,11 +3,20 @@ const path = require('path');
 const { spawn } = require('child_process');
 const JSZip = require('jszip');
 
-const { DATA_DIR } = require('../config');
+const { getSessionCwd } = require('../middleware/sessionCwd');
 
-// Resolve project directory relative to DATA_DIR
-function resolveProjectDir(subPath) {
-  const base = path.resolve(DATA_DIR);
+function requireCwd(req, res) {
+  const cwd = getSessionCwd(req);
+  if (!cwd) {
+    res.status(400).json({ error: 'No hay sesión activa. Selecciona una carpeta de proyecto.' });
+    return null;
+  }
+  return cwd;
+}
+
+// Resolve project directory relative to the session cwd
+function resolveProjectDir(cwd, subPath) {
+  const base = path.resolve(cwd);
   console.log(`[resolveProjectDir] subPath: ${subPath}, base: ${base}`);
 
   if (!subPath || subPath === '.' || subPath === './') return base;
@@ -462,7 +471,8 @@ const githubController = {
         return res.status(400).json({ error: 'Repository name is required', receivedName: repoName });
       }
 
-      const projectDir = resolveProjectDir(projectSubPath);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const projectDir = resolveProjectDir(cwd, projectSubPath);
       console.log(`[githubController] createRepo projectDir resolved to: ${projectDir}`);
 
       const dirExists = await fs.pathExists(projectDir);
@@ -582,7 +592,8 @@ const githubController = {
       if (!token) return res.status(400).json({ error: 'GitHub token is required' });
       if (!repoUrl) return res.status(400).json({ error: 'Repository URL is required' });
 
-      const projectDir = resolveProjectDir(projectSubPath);
+      const cwd = requireCwd(req, res); if (!cwd) return;
+      const projectDir = resolveProjectDir(cwd, projectSubPath);
       console.log('[githubController] updateRepo: projectSubPath =', JSON.stringify(projectSubPath), 'resolved projectDir =', projectDir);
 
       const result = await uploadFilesViaGitHubAPI(projectDir, repoUrl, token, true);
@@ -651,12 +662,14 @@ const githubController = {
       const owner = match[1];
       const repo = match[2];
 
+      const cwd = requireCwd(req, res); if (!cwd) return;
+
       // Determine destination
       let destDir;
       if (targetPath) {
-        destDir = resolveProjectDir(targetPath);
+        destDir = resolveProjectDir(cwd, targetPath);
       } else {
-        destDir = path.join(DATA_DIR, `${repo}-github-${Date.now()}`);
+        destDir = path.join(cwd, `${repo}-github-${Date.now()}`);
       }
 
       await fs.ensureDir(destDir);
@@ -669,7 +682,7 @@ const githubController = {
       try {
         const urlWithToken = token ? `https://${token}@github.com/${owner}/${repo}.git` : `${repoUrl}.git`;
         await runGit(destDir, ['clone', '--depth', '1', urlWithToken, '.']);
-        return res.json({ success: true, message: 'Repository cloned successfully', repoName: repo, projectPath: targetPath || path.relative(DATA_DIR, destDir) });
+        return res.json({ success: true, message: 'Repository cloned successfully', repoName: repo, projectPath: targetPath || path.relative(cwd, destDir) });
       } catch (gitError) {
         console.log('[githubController] Git clone failed, trying ZIP fallback:', gitError.message);
       }
@@ -707,7 +720,7 @@ const githubController = {
         }
       }
 
-      res.json({ success: true, message: `Repository downloaded and extracted (${extractedCount} files)`, repoName: repo, projectPath: targetPath || path.relative(DATA_DIR, destDir) });
+      res.json({ success: true, message: `Repository downloaded and extracted (${extractedCount} files)`, repoName: repo, projectPath: targetPath || path.relative(cwd, destDir) });
     } catch (error) {
       console.error('[githubController] cloneRepo error:', error);
       res.status(500).json({ error: error.message || 'Failed to clone repository' });
@@ -814,7 +827,8 @@ const githubController = {
   // Usa execFile con argumentos como array para evitar cualquier interpretación de cmd.exe.
   syncLocal: async (req, res) => {
     const { execFile } = require('child_process');
-    const projectDir = resolveProjectDir(req.body.path);
+    const cwd = requireCwd(req, res); if (!cwd) return;
+    const projectDir = resolveProjectDir(cwd, req.body.path);
     const message = req.body.message || `Sync from Zeus IA`;
 
     console.log('[githubController.syncLocal] projectDir =', projectDir, 'message =', message);
@@ -973,9 +987,10 @@ const githubController = {
     const name = remoteName || 'origin';
     if (!projectSubPath) return res.status(400).json({ error: 'path is required' });
 
+    const cwd = requireCwd(req, res); if (!cwd) return;
     let projectDir;
     try {
-      projectDir = resolveProjectDir(projectSubPath);
+      projectDir = resolveProjectDir(cwd, projectSubPath);
     } catch (e) {
       return res.status(400).json({ error: e.message });
     }

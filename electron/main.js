@@ -5,6 +5,12 @@ const path = require('path');
 const http = require('http');
 const os = require('os');
 
+// ===== VARIABLES DE ENTORNO PARA HIJOS (Express 8742 / Next.js 8741) =====
+// El registro de sesiones (api/sessionRegistry.js) persiste zeus-sessions.json aquí.
+// Next.js (lib/sessionResolve.ts) usa ZEUS_EXPRESS_URL para resolver sessionId->cwd.
+process.env.ZEUS_USER_DATA = process.env.ZEUS_USER_DATA || app.getPath('userData');
+process.env.ZEUS_EXPRESS_URL = process.env.ZEUS_EXPRESS_URL || 'http://localhost:8742';
+
 // ===== MANEJO GLOBAL DE ERRORES (evita que la app se cierre por errores no capturados) =====
 process.on('uncaughtException', (error) => {
   console.error('[MAIN] uncaughtException:', error);
@@ -87,13 +93,55 @@ function getAppBasePath() {
   return isDev ? app.getAppPath() : path.join(process.resourcesPath, 'app');
 }
 
+// ===== LOGS EN FICHERO (para diagnosticar procesos en producción) =====
+function getLogDir() {
+  const dir = path.join(app.getPath('userData'), 'logs');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (_) { /* ignore */ }
+  return dir;
+}
+
+/**
+ * Crea (o abre en modo append) un fichero de log en userData/logs/<name>.log.
+ * Devuelve un WriteStream o null si no se pudo crear. Útil para procesos hijo
+ * cuyo stdout/stderr no se ven en la app empaquetada (sin consola visible).
+ */
+function createLogStream(name) {
+  try {
+    const file = path.join(getLogDir(), `${name}.log`);
+    const stream = fs.createWriteStream(file, { flags: 'a' });
+    stream.write(`\n===== ${new Date().toISOString()} — nueva sesión de ${name} =====\n`);
+    return stream;
+  } catch (e) {
+    console.warn(`[LOG] No se pudo crear log para ${name}:`, e.message);
+    return null;
+  }
+}
+
+/** Conecta stdout/stderr de un proceso hijo a la consola y a un fichero de log. */
+function pipeProcessLogs(child, label, stream) {
+  child.stdout?.on('data', (data) => {
+    const s = data.toString();
+    console.log(`${label} stdout: ${s}`);
+    try { stream?.write(`[stdout] ${s}`); } catch (_) { /* ignore */ }
+  });
+  child.stderr?.on('data', (data) => {
+    const s = data.toString();
+    console.error(`${label} stderr: ${s}`);
+    try { stream?.write(`[stderr] ${s}`); } catch (_) { /* ignore */ }
+  });
+  child.on('error', (error) => {
+    console.error(`Error al iniciar ${label}:`, error);
+    try { stream?.write(`[error] ${error && error.stack ? error.stack : String(error)}\n`); } catch (_) { /* ignore */ }
+  });
+}
+
 ipcMain.handle('select-folder', async (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) return { canceled: true };
 
   const result = await dialog.showOpenDialog(win, {
     properties: ['openDirectory'],
-    title: 'Seleccionar carpeta de trabajo (DATA_PATH)'
+    title: 'Seleccionar carpeta de proyecto'
   });
 
   if (result.canceled || result.filePaths.length === 0) {
@@ -1384,9 +1432,10 @@ function createWindow() {
       const url = 'http://localhost:8741';
       console.log('Cargando URL:', url);
       
-      // Mostrar la ventana inmediatamente (sin enfocar para evitar flicker)
-      win.showInactive();
-      console.log('Ventana mostrada forzosamente');
+      // Mostrar la ventana inmediatamente
+      win.show();
+      win.focus();
+      console.log('Ventana mostrada');
       
       if (isDev) {
         win.webContents.openDevTools();
@@ -1418,7 +1467,8 @@ function createWindow() {
       console.error('Error en loadApp:', error);
       
       // Asegurar que la ventana se muestre incluso con error
-      win.showInactive();
+      win.show();
+      win.focus();
       
       // Si falla completamente, mostrar una página de error
       win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`
@@ -1448,7 +1498,8 @@ function createWindow() {
   setTimeout(() => {
     if (!win.isVisible()) {
       console.log('Timeout: Forzando muestra de la ventana');
-      win.showInactive();
+      win.show();
+      win.focus();
     }
   }, 5000);
   
@@ -1625,15 +1676,15 @@ function startBackendServices() {
     const tsNodeLocal = path.join(raeApiDir, 'node_modules', '.bin', 'ts-node.cmd');
     const tsNodeFallback = path.join(raeApiDir, 'node_modules', '.bin', 'ts-node');
     const tsNodeBin = fs.existsSync(tsNodeLocal) ? tsNodeLocal : tsNodeFallback;
+    const raeLog = createLogStream('rae-api');
+    raeLog?.write(`[dev] ts-node ${tsNodeBin} api.ts (cwd: ${raeApiDir})\n`);
     raeApiProcess = spawn(tsNodeBin, ['api.ts'], {
       cwd: raeApiDir,
       env: { ...process.env },
       shell: true,
       windowsHide: true
     });
-    raeApiProcess.stdout?.on('data', (data) => console.log(`RAE-API stdout: ${data.toString()}`));
-    raeApiProcess.stderr?.on('data', (data) => console.error(`RAE-API stderr: ${data.toString()}`));
-    raeApiProcess.on('error', (error) => console.error('Error al iniciar API RAE:', error));
+    pipeProcessLogs(raeApiProcess, 'RAE-API', raeLog);
   } else {
     console.log('Iniciando API RAE en modo producción...');
     const runtimeNodePath = buildRuntimeNodePath();
@@ -1643,15 +1694,24 @@ function startBackendServices() {
       resolveRuntimeFile(['api', 'api-rae', 'api.js']);
     if (!raeResolved) {
       console.warn('[RAE-API] No se encontró el script compilado (api/api-rae/dist/api.js ni api/api-rae/api.js). La API RAE no se iniciará.');
+      const raeLog = createLogStream('rae-api');
+      raeLog?.write(`[prod] ERROR: no se encontró dist/api.js ni api.js en ${JSON.stringify(getRuntimeBaseCandidates())}\n`);
     } else {
       console.log('[RAE-API] Script seleccionado:', raeResolved.filePath);
+      const raeLog = createLogStream('rae-api');
+      const raeCwd = path.join(raeResolved.basePath, 'api', 'api-rae');
+      raeLog?.write(`[prod] node ${raeResolved.filePath} (cwd: ${raeCwd}, NODE_PATH: ${runtimeNodePath})\n`);
       raeApiProcess = runNodeScript(raeResolved.filePath, [], {
-        cwd: path.join(raeResolved.basePath, 'api', 'api-rae'),
+        cwd: raeCwd,
         env: { NODE_PATH: runtimeNodePath }
       });
-      raeApiProcess.stdout?.on('data', (data) => console.log(`RAE-API stdout: ${data.toString()}`));
-      raeApiProcess.stderr?.on('data', (data) => console.error(`RAE-API stderr: ${data.toString()}`));
-      raeApiProcess.on('error', (error) => console.error('Error al iniciar API RAE:', error));
+      pipeProcessLogs(raeApiProcess, 'RAE-API', raeLog);
+      // Detectar si el proceso muere al arrancar (crash por require de pdf-parse, etc.)
+      raeApiProcess.on('exit', (code, signal) => {
+        const msg = `[prod] RAE-API terminó — code=${code} signal=${signal}\n`;
+        console.warn('[RAE-API]', msg);
+        try { raeLog?.write(msg); } catch (_) { /* ignore */ }
+      });
     }
   }
 
@@ -2003,7 +2063,8 @@ app.whenReady().then(async () => {
     setTimeout(() => {
       BrowserWindow.getAllWindows().forEach((w) => {
         if (!w.isDestroyed()) {
-          w.showInactive();
+          w.show();
+          w.focus();
           w.setBounds({ width: 1400, height: 820 });
         }
       });

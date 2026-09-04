@@ -431,40 +431,100 @@ async function ensureNextJsStructure(basePath: string) {
 
 function generateElectronFiles(appName: string): Record<string, string> {
   const mainJs = `const { app, BrowserWindow } = require('electron');
+  if (!app) {
+    console.error('CRÍTICO: electron.app es undefined. Probablemente ELECTRON_RUN_AS_NODE está activo.');
+    process.exit(1);
+  }
 const path = require('path');
+const http = require('http');
 
-const isDev = process.env.ELECTRON_DEV_PORT ? true : false;
-const port = process.env.ELECTRON_DEV_PORT || 3002;
+let mainWindow = null;
+let nextServer = null;
+
+const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+const target = (process.env.ELECTRON_TARGET || '').toLowerCase();
+const fallbackDevPort = target === 'desktop' ? '3002' : '3000';
+const devPort = process.env.ELECTRON_DEV_PORT || fallbackDevPort;
+const prodPort = '3000';
+
+function waitForServer(port, maxAttempts) {
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    const check = () => {
+      attempts++;
+      const req = http.get(\`http://localhost:\${port}/\`, (res) => { resolve(); });
+      req.on('error', () => {
+        if (attempts >= (maxAttempts || 60)) reject(new Error('Server did not start'));
+        else setTimeout(check, 500);
+      });
+      req.setTimeout(2000, () => { req.destroy(); });
+    };
+    check();
+  });
+}
 
 function createWindow() {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     title: '${appName.replace(/'/g, "\\'")}',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
       nodeIntegration: false,
+      contextIsolation: true,
     },
+    icon: path.join(__dirname, '..', 'public', 'installer-icon.ico'),
   });
 
   if (isDev) {
-    win.loadURL('http://localhost:' + port);
-    win.webContents.openDevTools();
+    mainWindow.loadURL(\`http://localhost:\${devPort}\`);
+    mainWindow.webContents.openDevTools();
   } else {
-    win.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadURL(\`http://localhost:\${prodPort}\`);
   }
+
+  mainWindow.on('closed', () => { mainWindow = null; });
 }
 
-app.whenReady().then(() => {
-  createWindow();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+function startNextServer() {
+  return new Promise((resolve, reject) => {
+    // Rutas relativas a __dirname: funcionan tanto con asar activado como desactivado.
+    const baseDir = path.join(__dirname, '..');
+    try {
+      const next = require(path.join(baseDir, 'node_modules', 'next'));
+      const nextApp = next({ dev: false, dir: baseDir });
+      const handle = nextApp.getRequestHandler();
+      nextApp.prepare().then(() => {
+        nextServer = http.createServer((req, res) => handle(req, res));
+        nextServer.listen(prodPort, () => resolve());
+      }).catch(reject);
+    } catch (err) {
+      reject(err);
+    }
   });
+}
+
+app.whenReady().then(async () => {
+  try {
+    if (!isDev) {
+      await startNextServer();
+    } else {
+      await waitForServer(parseInt(devPort), 30).catch(() => { });
+    }
+    createWindow();
+  } catch (err) {
+    console.error('Electron startup error:', err);
+    app.quit();
+  }
 });
 
 app.on('window-all-closed', () => {
+  if (nextServer) nextServer.close();
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 `;
 
@@ -590,7 +650,8 @@ export function getPackageJsonContent(selectedTemplate: string, appName: string,
          "appId": "com.zeus.${String(appName).toLowerCase().replace(/[^a-z0-9]/g, '-')}",
          "productName": "${appName}",
          "directories": { "output": "dist" },
-         "files": ["node_modules", ".next", "app", "public", "package.json", "next.config.js", "electron/**/*"],
+         "asar": false,
+         "files": ["node_modules", ".next/**/*", "!.next/cache/**/*", "!.next/dev/**/*", "!.next/turbopack/**/*", "app", "public", "package.json", "next.config.js", "electron/**/*"],
          "win": {
            "target": ["nsis"],
            "icon": "public/installer-icon.ico"
@@ -975,9 +1036,11 @@ function verifyPackageJsonDependencies(packageJsonContent: string): string {
       needsUpdate = true;
     }
 
-    // Check and fix Next.js version if it's a Next.js project
-    if (packageJson.dependencies.next && !packageJson.dependencies.next.includes('14')) {
-      packageJson.dependencies.next = "14.0.0";
+    // Check and fix Next.js version if it's a Next.js project.
+    // The template targets Next 16 (eslint-config-next ^16.1.6, @next/bundle-analyzer ^16.1.6),
+    // so keep it on 16 to avoid dependency mismatches that break `next build`.
+    if (packageJson.dependencies.next && !packageJson.dependencies.next.includes('16')) {
+      packageJson.dependencies.next = "^16.1.6";
       needsUpdate = true;
     }
 
@@ -1310,14 +1373,14 @@ function getSystemPrompt(selectedTemplate: string, language: string, dbType: str
         - app/page.tsx (main page)
         - app/globals.css (global styles with Tailwind)
         - package.json (with Next.js, React, Tailwind, Electron dependencies)
-        - next.config.js (MUST include output: 'export' and distDir: 'dist')
+        - next.config.js (server mode: NO output: 'export', NO distDir: 'dist'; use the default .next dir so the custom Next server in electron/main.js works and .next gets packaged)
         - tsconfig.json (if TypeScript)
         - tailwind.config.js (Tailwind configuration)
         - postcss.config.js (PostCSS configuration)
         - electron/main.js (Electron main process entry point)
         - electron/preload.js (Electron preload script with contextBridge)
 
-        Packaging: Electron 28+ with electron-builder. The app is built as a static export (output: 'export') and loaded by Electron.
+        Packaging: Electron 28+ with electron-builder. The app runs a Next.js custom server inside Electron (electron/main.js starts next({ dev: false }) and serves via http://localhost:3000), so next.config.js must be in SERVER mode (NO output: 'export', default .next distDir). API routes are supported.
         Styles: Tailwind CSS (properly configured)
         Authentication: ${authPrompt}
         Database: ${databasePrompt}
@@ -1937,9 +2000,9 @@ Do NOT include any other text in your response, just the JSON object.
  ---
 
  IMPORTANT: This is a DESKTOP application packaged with Electron. You MUST include the following Electron-specific files in your output:
- - "electron/main.js": Electron main process that loads the Next.js app (dev URL or exported dist/index.html).
+ - "electron/main.js": Electron main process that starts a Next.js custom server (next({ dev: false }) + getRequestHandler) and loads http://localhost:3000 in a BrowserWindow.
  - "electron/preload.js": Preload script with safe contextBridge API exposure.
- - "next.config.js": MUST include output: 'export' and distDir: 'dist' for static export so Electron can load the app.
+ - "next.config.js": SERVER mode config. Do NOT use output: 'export' and do NOT set distDir: 'dist'; keep the default .next dir so the custom server works and electron-builder can package .next. API routes under app/api are supported.
 
  RULES FOR GENERATING FILES AND CONTENT:
  1. REQUIRED FILES (always include with complete and optimized content):
@@ -2720,8 +2783,10 @@ If the file is app/layout.tsx:
       } else if (filePath === 'next.config.js' && selectedTemplate === 'next-js') {
         fileContent = `/** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',
-  distDir: 'dist',
+  // Esta app de escritorio se sirve con un servidor Next.js custom desde Electron
+  // (electron/main.js arranca next({ dev: false }) y usa getRequestHandler()).
+  // NO usar output: 'export' ni distDir: 'dist': rompería las API routes y el
+  // empaquetado de .next que electron-builder incluye en el installer.
   images: {
     unoptimized: true,
     remotePatterns: [

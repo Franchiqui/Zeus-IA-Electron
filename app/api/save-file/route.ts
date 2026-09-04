@@ -2,14 +2,15 @@ import { NextResponse } from 'next/server';
 import fs from 'fs/promises';
 import path from 'path';
 import fsSync from 'fs';
-import { readDataPathFromEnv } from '@/lib/env';
+import { getSessionCwdFromRequest } from '@/lib/sessionResolve';
+import { getBaseDataPath } from '@/lib/env';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { filePath, content, encoding, skipBackup } = body;
+    const { filePath, content, encoding, skipBackup, projectRoot } = body;
 
-    console.log('[save-file] Request recibida:', { filePath, contentLength: content?.length, skipBackup });
+    console.log('[save-file] Request recibida:', { filePath, contentLength: content?.length, skipBackup, projectRoot });
 
     if (!filePath || typeof filePath !== 'string') {
       return NextResponse.json(
@@ -25,39 +26,53 @@ export async function POST(request: Request) {
       );
     }
 
-    // Leer DATA_PATH
-    const dataPath = readDataPathFromEnv() || process.env.DATA_PATH;
-    console.log('[save-file] DATA_PATH leído:', dataPath);
-    if (!dataPath) {
-      return NextResponse.json(
-        { error: 'DATA_PATH no configurado' },
-        { status: 500 }
-      );
+    // Resolver la ruta base: sesión de la request (header X-Zeus-Session),
+    // fallback a la sesión activa global, fallback a DATA_PATH
+    let baseDataPath: string;
+    const sessionCwd = await getSessionCwdFromRequest(request);
+    if (sessionCwd) {
+      baseDataPath = path.normalize(sessionCwd);
+    } else {
+      baseDataPath = await getBaseDataPath();
     }
-
-    const baseDataPath = path.normalize(
-      path.isAbsolute(dataPath) ? dataPath : path.resolve(process.cwd(), dataPath)
-    );
     console.log('[save-file] baseDataPath:', baseDataPath);
+
+    // Usar projectRoot si está dentro del cwd de la sesión; si no, usar el cwd
+    let basePath: string;
+    if (projectRoot && typeof projectRoot === 'string') {
+      const normalizedRoot = path.normalize(projectRoot);
+      const bl = baseDataPath.toLowerCase();
+      const rl = normalizedRoot.toLowerCase();
+      const sep = path.sep;
+      if (rl === bl || rl.startsWith(bl + sep)) {
+        basePath = normalizedRoot;
+      } else {
+        // projectRoot fuera del cwd de sesión — usar el cwd como base segura
+        console.warn('[save-file] projectRoot fuera del cwd de sesión, usando cwd:', baseDataPath);
+        basePath = baseDataPath;
+      }
+    } else {
+      basePath = baseDataPath;
+    }
 
     let targetPath: string;
     const normalizedFilePath = path.normalize(filePath);
 
     if (path.isAbsolute(normalizedFilePath)) {
-      // Si es una ruta absoluta, verificar que esté dentro de DATA_PATH
+      // Si es una ruta absoluta, verificar que esté dentro de basePath
       targetPath = path.resolve(normalizedFilePath);
       console.log('[save-file] Ruta absoluta recibida. targetPath:', targetPath);
     } else {
-      // Si es relativa, unir con DATA_PATH
-      targetPath = path.resolve(path.join(baseDataPath, normalizedFilePath));
+      // Si es relativa, unir con basePath
+      targetPath = path.resolve(path.join(basePath, normalizedFilePath));
       console.log('[save-file] Ruta relativa recibida. targetPath:', targetPath);
     }
 
     // Seguridad: prevenir path traversal
-    if (!targetPath.toLowerCase().startsWith(baseDataPath.toLowerCase())) {
+    if (!targetPath.toLowerCase().startsWith(basePath.toLowerCase())) {
       console.error('[save-file] ❌ Path traversal detectado:', {
         targetPath,
-        baseDataPath
+        basePath
       });
       return NextResponse.json(
         { error: 'Ruta no permitida (path traversal detectado)' },

@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { fuzzyFindAndReplace, isAlreadyApplied, safeWriteFile } from '@/utils/fileOps';
 
 export type PlanAction = {
   type: 'create_file' | 'update_file' | 'create_folder';
@@ -65,7 +66,10 @@ export async function applyPlanActions(
       if (action.type === 'create_file') {
         await fs.mkdir(path.dirname(fullPath), { recursive: true });
         const content = typeof action.content === 'string' ? action.content : '';
-        await fs.writeFile(fullPath, content, 'utf8');
+        const wr = await safeWriteFile(fullPath, content);
+        if (!wr.success) {
+          throw new Error(wr.error || 'Error al crear archivo');
+        }
         applied.push({ action });
         continue;
       }
@@ -80,23 +84,46 @@ export async function applyPlanActions(
 
         if (Array.isArray(action.replacements) && action.replacements.length > 0) {
           let next = current;
+          let anyApplied = false;
+          let anyNoMatch = false;
           for (const r of action.replacements) {
             if (typeof r.old === 'string' && typeof r.new === 'string' && r.old.length > 0) {
-              if (!next.includes(r.old)) {
-                throw new Error(`replacement: texto "old" no encontrado en ${action.path}`);
+              // Coincidencia fuzzy (cadena de 9 estrategias) en lugar del
+              // replace exacto (.includes + split/join) anterior, que fallaba
+              // ante deriva de espacios/indentación/escapes del modelo.
+              const res = fuzzyFindAndReplace(next, r.old, r.new, false);
+              if (res.matchCount > 0) {
+                next = res.newContent;
+                anyApplied = true;
+                continue;
               }
-              next = next.split(r.old).join(r.new);
+              // Quizá el reemplazo ya estaba aplicado → no-op, no error.
+              if (isAlreadyApplied(next, r.old, r.new)) {
+                continue;
+              }
+              anyNoMatch = true;
+              throw new Error(`replacement: texto "old" no encontrado en ${action.path} (${res.error || 'sin coincidencia fuzzy'})`);
             }
           }
           await fs.mkdir(path.dirname(fullPath), { recursive: true });
-          await fs.writeFile(fullPath, next, 'utf8');
+          if (anyApplied) {
+            const wr = await safeWriteFile(fullPath, next, current);
+            if (!wr.success) {
+              throw new Error(wr.error || 'Error al escribir archivo');
+            }
+          } else if (!anyNoMatch) {
+            // Todos los reemplazos ya estaban aplicados: nada que escribir.
+          }
           applied.push({ action });
           continue;
         }
 
         if (typeof action.content === 'string' && action.content.length > 0) {
           await fs.mkdir(path.dirname(fullPath), { recursive: true });
-          await fs.writeFile(fullPath, action.content, 'utf8');
+          const wr = await safeWriteFile(fullPath, action.content, current);
+          if (!wr.success) {
+            throw new Error(wr.error || 'Error al escribir archivo');
+          }
           applied.push({ action });
           continue;
         }

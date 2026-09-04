@@ -196,7 +196,15 @@ if (typeof globalThis.fetch !== 'undefined') {
 
 const app = express();
 // Base directory: when packaged with pkg or running inside Electron, use the folder of the executable; otherwise use the source directory
-const isPackaged = typeof process.pkg !== 'undefined' || !!process.versions.electron || process.env.ELECTRON_RUN_AS_NODE === '1' || process.env.ZEUS_PACKAGED === '1';
+// NOTA: en desarrollo (NODE_ENV=development, lo que pone `npm run electron:dev`),
+// aunque el script corra DENTRO de Electron (process.versions.electron existe),
+// NO está empaquetado: baseDir debe ser el directorio fuente (__dirname), no la
+// carpeta del binario de Electron. Sin este override, restart-api.bat y uploads/
+// se buscan en node_modules/electron/dist y nunca se encuentran.
+const isDevOverride = process.env.NODE_ENV === 'development';
+const isPackaged = isDevOverride
+  ? false
+  : (typeof process.pkg !== 'undefined' || !!process.versions.electron || process.env.ELECTRON_RUN_AS_NODE === '1' || process.env.ZEUS_PACKAGED === '1');
 const baseDir = isPackaged ? path.dirname(process.execPath) : __dirname;
 
 // Asegurar que exista la carpeta de uploads (use writable user dir when packaged)
@@ -8670,32 +8678,16 @@ app.post('/api/register-token', (req, res) => {
 // ✅ NUEVO: Función para iniciar servicios adicionales (restart-api.bat)
 function startAdditionalServices() {
   const { spawn } = require('child_process');
-  
+
   console.log('[START] Iniciando servicios adicionales...');
 
-  // 1. Ejecutar restart-api.bat
-  // Este archivo ahora genera un VBScript para iniciar la API de Python de forma invisible
-  const restartApiBatPath = path.join(baseDir, 'public', 'restart-api.bat');
-  if (fs.existsSync(restartApiBatPath)) {
-    console.log(`[START] Ejecutando: ${restartApiBatPath}`);
-    try {
-      // En Windows, usar 'start /min' o simplemente ejecutar el bat. 
-      // El bat mismo se encargará de lanzar el VBS invisible.
-      const batProcess = spawn('cmd.exe', ['/c', restartApiBatPath], {
-        cwd: path.dirname(restartApiBatPath),
-        detached: true,
-        stdio: 'ignore',
-        shell: false, // Cambiado a false para evitar ventana extra de shell
-        windowsHide: true // Ocultar ventana en Windows
-      });
-      batProcess.unref();
-      console.log(`[START] ✅ restart-api.bat invocado (la API se iniciará de forma invisible)`);
-    } catch (e) {
-      console.error(`[ERROR] No se pudo ejecutar restart-api.bat: ${e.message}`);
-    }
-  } else {
-    console.warn(`[WARN] No se encontró restart-api.bat en: ${restartApiBatPath}`);
-  }
+  // 1. restart-api.bat está DESACTIVADO: es un lanzador legacy que hacía
+  //    `taskkill /f /im python.exe` (mata TODOS los procesos Python del sistema)
+  //    para arrancar la "Fly Backup Local API" en el puerto 8000, que ya no usa
+  //    ningún componente del frontend. No debe ejecutarse automáticamente.
+  //    Si algún día se necesita la API de backup, se lanza manualmente con:
+  //       serve/public/restart-api.bat
+  console.log('[START] ⏭️  restart-api.bat omitido (lanzador legacy de la API de backup, desactivado).');
 }
 
 (async () => {

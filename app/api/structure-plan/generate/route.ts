@@ -39,8 +39,67 @@ function getDefaultEndpoint(provider: string | undefined, type: string | undefin
   return undefined;
 }
 
+// Normaliza la URL del endpoint local para evitar dobles sufijos.
+// llama.cpp / LM Studio exponen /v1/chat/completions; Ollama usa /api/chat.
+// Si el usuario guardó la base_url ya con la ruta completa (o con /v1), no la duplicamos.
+function normalizeLocalEndpoint(endpoint: string, isOllama: boolean): string {
+  const trimmed = String(endpoint || '').trim().replace(/\/$/, '');
+  if (!trimmed) return trimmed;
+  const ollamaSuffix = '/api/chat';
+  const openaiSuffix = '/v1/chat/completions';
+  if (isOllama) {
+    if (trimmed.endsWith(ollamaSuffix)) return trimmed;
+    if (trimmed.endsWith('/api') || trimmed.endsWith('/v1')) return `${trimmed}/chat`;
+    return `${trimmed}${ollamaSuffix}`;
+  }
+  if (trimmed.endsWith(openaiSuffix) || trimmed.endsWith(ollamaSuffix)) return trimmed;
+  if (trimmed.endsWith('/v1')) return `${trimmed}/chat/completions`;
+  return `${trimmed}${openaiSuffix}`;
+}
+
+function isLocalEndpoint(endpoint: string): boolean {
+  const lower = String(endpoint || '').toLowerCase();
+  return lower.includes('localhost') || lower.includes('127.0.0.1') || lower.includes('0.0.0.0');
+}
+
+async function callLocalModel(messages: any[], modelConfig: any): Promise<string> {
+  const { endpoint, modelName, apiKey, provider } = modelConfig;
+  const isOllama = String(provider || '').toLowerCase() === 'ollama';
+  const url = normalizeLocalEndpoint(endpoint, isOllama);
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: modelName,
+        messages: messages,
+        stream: false,
+        temperature: 0.7,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      throw new Error(`Model API Error (${response.status}) en ${url}: ${errorText.slice(0, 200) || response.statusText}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || data.message?.content || data.response;
+    console.log('[DEBUG] Respuesta del modelo local (data):', JSON.stringify(data).substring(0, 300));
+    console.log('[DEBUG] Contenido extraído del modelo local:', content?.substring(0, 200));
+    return content;
+  } catch (error: any) {
+    console.error('Error al conectar con modelo local:', error);
+    throw new Error(`No se pudo conectar con el modelo local (${url}): ${error?.message || error}`);
+  }
+}
+
 async function getModelResponse(messages: any[], modelConfig: any) {
-  const { endpoint, modelName, apiKey, provider, type, is_local } = modelConfig;
+  const { endpoint, apiKey, provider, type, is_local } = modelConfig;
   const normalizedProvider = String(provider || '').toLowerCase();
   const normalizedType = String(type || '').toLowerCase();
 
@@ -57,34 +116,7 @@ async function getModelResponse(messages: any[], modelConfig: any) {
     }
     if (isTypeLocal) {
       console.log(`Conectando a modelo local (type: ${normalizedType})...`);
-      const isOllama = normalizedProvider === 'ollama';
-      const url = isOllama ? endpoint : `${endpoint}/v1/chat/completions`;
-
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: modelName,
-            messages: messages,
-            stream: false,
-            temperature: 0.7,
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`Model API Error: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        const content = data.choices?.[0]?.message.content || data.message?.content || data.response;
-        console.log('[DEBUG] Respuesta del modelo local (data):', JSON.stringify(data).substring(0, 300));
-        console.log('[DEBUG] Contenido extraído del modelo local:', content?.substring(0, 200));
-        return content;
-      } catch (error) {
-        console.error('Error al conectar con modelo local:', error);
-        throw new Error('No se pudo conectar con el modelo local.');
-      }
+      return callLocalModel(messages, modelConfig);
     }
   }
 
@@ -92,34 +124,7 @@ async function getModelResponse(messages: any[], modelConfig: any) {
   if (is_local !== undefined) {
     if (is_local === true) {
       console.log(`Conectando a modelo local (is_local: true)...`);
-      const isOllama = normalizedProvider === 'ollama';
-      const url = isOllama ? endpoint : `${endpoint}/v1/chat/completions`;
-
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: modelName,
-            messages: messages,
-            stream: false,
-            temperature: 0.7,
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`Model API Error: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        const content = data.choices?.[0]?.message.content || data.message?.content || data.response;
-        console.log('[DEBUG] Respuesta del modelo local (data):', JSON.stringify(data).substring(0, 300));
-        console.log('[DEBUG] Contenido extraído del modelo local:', content?.substring(0, 200));
-        return content;
-      } catch (error) {
-        console.error('Error al conectar con modelo local:', error);
-        throw new Error('No se pudo conectar con el modelo local.');
-      }
+      return callLocalModel(messages, modelConfig);
     }
     // Si is_local es false, continuar con detección por provider o endpoint
   }
@@ -131,6 +136,13 @@ async function getModelResponse(messages: any[], modelConfig: any) {
       console.log('Provider desconocido pero hay API key y type remoto, usando endpoint por defecto...');
       return getModelResponseRemote(messages, { ...modelConfig, endpoint: defaultEndpoint });
     }
+  }
+
+  // Si no hay type o is_local definido, pero el endpoint es local (p.ej. llama.cpp
+  // sin api_key), ir por la vía local en lugar de exigir una API key remota.
+  if (endpoint && isLocalEndpoint(endpoint)) {
+    console.log('Conectando a modelo local (endpoint localhost detectado)...');
+    return callLocalModel(messages, modelConfig);
   }
 
   // Si no hay type o is_local definido, pero hay API key, usar modelo remoto

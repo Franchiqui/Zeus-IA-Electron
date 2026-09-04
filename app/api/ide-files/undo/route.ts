@@ -14,7 +14,7 @@ function safeJoin(base: string, rel: string): string {
 
 export async function POST(request: Request) {
   try {
-    const baseDataPath = getBaseDataPath();
+    const baseDataPath = await getBaseDataPath();
     const body = await request.json();
     const { path: relPath = '', name } = body;
 

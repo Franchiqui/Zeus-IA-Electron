@@ -21,6 +21,7 @@ import { generatePbSchema } from '@/lib/generatePbSchema';
 import { searchImages, type ImageResult } from '@/services/images';
 import JSZip from 'jszip';
 import { useTranslation } from '../../contexts/translation-context';
+import { sessionFetch } from '@/lib/projectStore';
 
 async function obtenerContenidoTemplate(nombreTemplate: string, path?: string, id?: string): Promise<string> {
   let url = `/api/code_template/${encodeURIComponent(nombreTemplate)}`;
@@ -906,7 +907,7 @@ const TwoStepAppGenerator = forwardRef<TwoStepAppGeneratorRef, TwoStepAppGenerat
     const pid = (projectId as any) || (contextProjectId as any);
     if (!pid) return projectRoot;
     try {
-      const rootRes = await fetch('/api/project/get-root', {
+      const rootRes = await sessionFetch('/api/project/get-root', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId: pid, initialProjectRoot: projectRoot })
@@ -983,7 +984,7 @@ const TwoStepAppGenerator = forwardRef<TwoStepAppGeneratorRef, TwoStepAppGenerat
         let correctedContent: string | null = null;
         if (projectRoot && correctionResult.appliedChanges) {
           try {
-            const reloadResponse = await fetch('/api/read-file', {
+            const reloadResponse = await sessionFetch('/api/read-file', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ filePath: normalizedKey, projectRoot, projectId })
@@ -1004,7 +1005,7 @@ const TwoStepAppGenerator = forwardRef<TwoStepAppGeneratorRef, TwoStepAppGenerat
           }));
           try {
             const effectiveRoot = await getDefinitiveProjectRoot();
-            await fetch('/api/save-file', {
+            await sessionFetch('/api/save-file', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ filePath: normalizedKey, content: correctedContent, projectRoot: effectiveRoot, projectId })
@@ -1115,7 +1116,7 @@ const TwoStepAppGenerator = forwardRef<TwoStepAppGeneratorRef, TwoStepAppGenerat
 
       // Resolver el projectRoot definitivo del servidor
       try {
-        const rootRes = await fetch('/api/project/get-root', {
+        const rootRes = await sessionFetch('/api/project/get-root', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1420,7 +1421,7 @@ const TwoStepAppGenerator = forwardRef<TwoStepAppGeneratorRef, TwoStepAppGenerat
       let definitiveProjectRoot = projectRoot;
       if (targetProjectId) {
         try {
-          const rootRes = await fetch('/api/project/get-root', {
+          const rootRes = await sessionFetch('/api/project/get-root', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1455,7 +1456,7 @@ const TwoStepAppGenerator = forwardRef<TwoStepAppGeneratorRef, TwoStepAppGenerat
       } else {
         for (const candidate of candidates) {
           try {
-            const readResponse = await fetch('/api/read-file', {
+            const readResponse = await sessionFetch('/api/read-file', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -1757,7 +1758,7 @@ const TwoStepAppGenerator = forwardRef<TwoStepAppGeneratorRef, TwoStepAppGenerat
       console.log(`[handleSave] Usando /api/save-file. root=${root || 'null'}, projectId=${effectiveProjectId}`);
       for (const [filePath, content] of entries) {
         try {
-          const response = await fetch('/api/save-file', {
+          const response = await sessionFetch('/api/save-file', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ skipBackup: true, filePath, content, projectRoot: root, projectId: root ? undefined : effectiveProjectId })
@@ -1785,7 +1786,7 @@ const TwoStepAppGenerator = forwardRef<TwoStepAppGeneratorRef, TwoStepAppGenerat
               reader.readAsDataURL(img);
             });
             const imgPath = `public/uploads/${img.name}`;
-            const response = await fetch('/api/save-file', {
+            const response = await sessionFetch('/api/save-file', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ skipBackup: true, filePath: imgPath, content: dataUrl, projectRoot: root, projectId: root ? undefined : effectiveProjectId })
@@ -2116,7 +2117,7 @@ Por favor:
       // Si el usuario creó la API desde la pestaña API Generator,
       // reutilizamos esa configuración en lugar de generar una nueva.
       try {
-        const checkRes = await fetch('/api/read-file', {
+        const checkRes = await sessionFetch('/api/read-file', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filePath: 'API/zeus-api-config.json', projectRoot })
@@ -2131,14 +2132,14 @@ Por favor:
 
               // Asegurar que el pb_schema.json exista; si no, lo creamos ahora
               try {
-                const pbCheckRes = await fetch('/api/read-file', {
+                const pbCheckRes = await sessionFetch('/api/read-file', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ filePath: 'API/pb_schema.json', projectRoot })
                 });
                 if (!pbCheckRes.ok) {
                   const pbSchemaContent = generatePbSchema(existingConfig.endpoints || [], existingConfig.title || formData.appName);
-                  await fetch('/api/save-file', {
+                  await sessionFetch('/api/save-file', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ skipBackup: true, filePath: 'API/pb_schema.json', content: pbSchemaContent, projectRoot })
@@ -2327,7 +2328,7 @@ Por favor:
       for (const [filePath, content] of Object.entries(apiFilesToSave)) {
         if (!content || content.trim().length === 0) continue;
         try {
-          const res = await fetch('/api/save-file', {
+          const res = await sessionFetch('/api/save-file', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ skipBackup: true, filePath, content, projectRoot })
@@ -2520,7 +2521,7 @@ export default function ApiClientPage() {
         for (const [filePath, content] of Object.entries(uiFiles)) {
           if (!content || content.trim().length === 0) continue;
           try {
-            const res = await fetch('/api/save-file', {
+            const res = await sessionFetch('/api/save-file', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ skipBackup: true, filePath, content, projectRoot })
@@ -5286,7 +5287,7 @@ export default pb;
               reader.readAsDataURL(img);
             });
             const imgPath = `public/uploads/${img.name}`;
-            const res = await fetch('/api/save-file', {
+            const res = await sessionFetch('/api/save-file', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ skipBackup: true, filePath: imgPath, content: dataUrl, projectRoot: root })
@@ -5408,7 +5409,7 @@ export default pb;
     console.log(`[createFolders] Creando ${directories.length} carpetas en ${root}...`);
     for (const dir of directories) {
       try {
-        const response = await fetch('/api/create-folder', {
+        const response = await sessionFetch('/api/create-folder', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ dir, projectRoot: root })
@@ -5490,7 +5491,7 @@ export default pb;
       if (projectRoot) {
         const normalizedFilePath = file.path.startsWith('/') ? file.path.slice(1) : file.path;
         try {
-          await fetch('/api/save-file', {
+          await sessionFetch('/api/save-file', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
@@ -5705,7 +5706,7 @@ export default pb;
                     console.log(`Attempting to save file to disk: ${normalizedFilePath}`);
                     try {
                       const effectiveRoot = await getDefinitiveProjectRoot();
-                      const saveResponse = await fetch('/api/save-file', {
+                      const saveResponse = await sessionFetch('/api/save-file', {
                         method: 'POST',
                         headers: {
                           'Content-Type': 'application/json'
@@ -6210,7 +6211,7 @@ export default pb;
                                   }
 
                                   // Guardar el código corregido
-                                  const saveResponse = await fetch('/api/save-file', {
+                                  const saveResponse = await sessionFetch('/api/save-file', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({
@@ -6689,7 +6690,7 @@ export default pb;
         if (projectRoot) {
           const normalizedFilePath = file.path.startsWith('/') ? file.path.slice(1) : file.path;
           try {
-            await fetch('/api/save-file', {
+            await sessionFetch('/api/save-file', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({

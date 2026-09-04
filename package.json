@@ -18,7 +18,8 @@
     "electron:build:installer": "electron-builder --win nsis --x64",
     "electron:build:mac": "electron-builder --mac",
     "electron:build:linux": "electron-builder --linux",
-    "package": "npm run build && npm run electron:build"
+    "build:api-rae": "npm --prefix api/api-rae run build",
+    "package": "npm run build && npm run build:api-rae && npm run electron:build"
   },
   "dependencies": {
     "@codemirror/lang-javascript": "^6.2.4",
@@ -29,6 +30,7 @@
     "@headlessui/react": "^2.2.10",
     "@heroicons/react": "^2.2.0",
     "@hookform/resolvers": "^5.2.2",
+    "@iarna/toml": "^2.2.5",
     "@monaco-editor/react": "^4.7.0",
     "@prisma/client": "^7.8.0",
     "@radix-ui/react-accordion": "^1.2.12",
@@ -66,6 +68,7 @@
     "file-saver": "^2.0.5",
     "framer-motion": "^12.38.0",
     "input-otp": "^1.2.4",
+    "js-yaml": "^4.3.1",
     "jszip": "^3.10.1",
     "lucide-react": "^1.14.0",
     "monaco-editor-webpack-plugin": "^7.1.1",
